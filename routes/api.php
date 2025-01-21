@@ -14,6 +14,7 @@ use App\Http\Controllers\TeamMemberController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\CountryController;
 use App\Http\Controllers\TournamentController;
+use App\Http\Controllers\AgeCategoryController;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     $user = $request->user();
@@ -57,6 +58,8 @@ Route::apiResource('districts', DistrictController::class);
 Route::apiResource('subdistricts', SubdistrictController::class);
 //Wards
 Route::apiResource('wards', WardController::class);
+//Age Categories
+Route::apiResource('age-categories', AgeCategoryController::class);
 
 //Navigation Menus
 Route::get('navigation-menus/fetch-all', [NavigationMenuController::class, 'fetchAllNavigation']);

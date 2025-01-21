@@ -19,6 +19,16 @@ class TeamMember extends Model
     {
         return $this->belongsTo(Country::class);
     }
+
+    public function province()
+    {
+        return $this->belongsTo(Province::class);
+    }
+
+    public function ageCategory()
+    {
+        return $this->belongsTo(AgeCategory::class);
+    }
 }
 
 

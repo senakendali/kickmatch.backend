@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\TeamMember;
+use App\Models\AgeCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
@@ -62,6 +63,7 @@ class TeamMemberController extends Controller
             'ward_id' => 'required|exists:wards,id',
             'address' => 'required|string',
             'category' => 'required|in:Tanding,Seni,Olahraga',
+            'age_category_id' => 'required|exists:age_categories,id',
             'documents' => 'required|string',
         ]);
 
@@ -103,6 +105,7 @@ class TeamMemberController extends Controller
             'ward_id' => 'required|exists:wards,id',
             'address' => 'required|string',
             'category' => 'required|in:Tanding,Seni',
+            'age_category_id' => 'required|exists:age_categories,id',
             'documents' => 'required|string',
         ]);
 
@@ -127,6 +130,7 @@ class TeamMemberController extends Controller
             'ward_id' => $data['ward_id'],
             'address' => $data['address'],
             'category' => $data['category'],
+            'age_category_id' => $data['age_category_id'],
             'documents' => $data['documents'],
         ]); 
 

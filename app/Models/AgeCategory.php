@@ -14,4 +14,9 @@ class AgeCategory extends Model
     {
         return $this->hasMany(TournamentAgeCategory::class);
     }
+
+    public function teamMembers()
+    {
+        return $this->hasMany(TeamMember::class);
+    }
 }
