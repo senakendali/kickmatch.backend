@@ -25,5 +25,15 @@ class Tournament extends Model
         return $this->hasMany(TournamentAgeCategory::class);
     }
 
+    public function tournamentContingents()
+    {
+        return $this->hasMany(TournamentContingent::class);
+    }
+
+    public function tournamentContactPersons()
+    {
+        return $this->hasMany(TournamentContactPerson::class);
+    }
+
    
 }

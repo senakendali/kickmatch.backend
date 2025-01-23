@@ -69,6 +69,7 @@ class TournamentController extends Controller
                         'id' => $category->id,
                         'name' => optional($category->matchCategory)->name, // Handle null
                         'description' => $category->description,
+                        'registration_fee' => $category->registration_fee,
                     ];
                 }),
                 'age_categories' => $tournament->tournamentAgeCategories->map(function ($ageCategory) {
@@ -77,6 +78,14 @@ class TournamentController extends Controller
                         'name' => $ageCategory->ageCategory->name,
                         'min_age' => $ageCategory->ageCategory->min_age,
                         'max_age' => $ageCategory->ageCategory->max_age,
+                    ];
+                }),
+                'contact_persons' => $tournament->tournamentContactPersons->map(function ($contactPerson) {
+                    return [
+                        'id' => $contactPerson->id,
+                        'name' => $contactPerson->name,
+                        'description' => $contactPerson->description,
+                        'phone' => $contactPerson->phone,
                     ];
                 }),
             ];
@@ -139,6 +148,7 @@ class TournamentController extends Controller
                         'id' => $category->id,
                         'name' => optional($category->matchCategory)->name, // Handle null
                         'description' => $category->description,
+                        'registration_fee' => $category->registration_fee,
                     ];
                 }),
                 'age_categories' => $tournament->tournamentAgeCategories->map(function ($ageCategory) {
@@ -147,6 +157,14 @@ class TournamentController extends Controller
                         'name' => $ageCategory->ageCategory->name,
                         'min_age' => $ageCategory->ageCategory->min_age,
                         'max_age' => $ageCategory->ageCategory->max_age,
+                    ];
+                }),
+                'contact_persons' => $tournament->tournamentContactPersons->map(function ($contactPerson) {
+                    return [
+                        'id' => $contactPerson->id,
+                        'name' => $contactPerson->name,
+                        'description' => $contactPerson->description,
+                        'phone' => $contactPerson->phone,
                     ];
                 }),
             ];
@@ -204,6 +222,7 @@ class TournamentController extends Controller
                         'id' => $category->id,
                         'name' => optional($category->matchCategory)->name, // Handle null
                         'description' => $category->description,
+                        'registration_fee' => $category->registration_fee,
                     ];
                 }),
                 'age_categories' => $tournament->tournamentAgeCategories->map(function ($ageCategory) {
@@ -212,6 +231,14 @@ class TournamentController extends Controller
                         'name' => $ageCategory->ageCategory->name,
                         'min_age' => $ageCategory->ageCategory->min_age,
                         'max_age' => $ageCategory->ageCategory->max_age,
+                    ];
+                }),
+                'contact_persons' => $tournament->tournamentContactPersons->map(function ($contactPerson) {
+                    return [
+                        'id' => $contactPerson->id,
+                        'name' => $contactPerson->name,
+                        'description' => $contactPerson->description,
+                        'phone' => $contactPerson->phone,
                     ];
                 }),
             ];
