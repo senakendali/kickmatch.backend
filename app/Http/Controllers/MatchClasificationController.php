@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\MatchClasification;
 use App\Models\MatchClasificationDetail;
+use App\Models\CategoryClass;
 
 class MatchClasificationController extends Controller
 {
@@ -75,13 +76,19 @@ class MatchClasificationController extends Controller
     {
         try {
             $matchClasification = MatchClasification::with('matchClasificationDetails.categoryClass')->findOrFail($id);
-        
-            // Group category_class data by gender
+    
+            // Get all category_classes and filter them by age_category_id from MatchClasification
+            $allCategoryClasses = CategoryClass::where('age_category_id', $matchClasification->age_category_id)->get();
+    
+            // Group selected category_classes by gender from matchClasificationDetails
             $groupedDetails = $matchClasification->matchClasificationDetails->map(function ($detail) {
                 return $detail->categoryClass; // Extract category_class data
-            })->groupBy('gender'); // Group by gender
-        
-            // Format the response
+            })->groupBy('gender');
+    
+            // Group all available category_classes by gender
+            $groupedCategoryClasses = $allCategoryClasses->groupBy('gender');
+    
+            // Combine the details for male and female categories
             $data = [
                 'id' => $matchClasification->id,
                 'name' => $matchClasification->name,
@@ -91,16 +98,47 @@ class MatchClasificationController extends Controller
                 'created_at' => $matchClasification->created_at,
                 'updated_at' => $matchClasification->updated_at,
                 'details' => [
-                    'male' => $groupedDetails->get('male') ?? [],
-                    'female' => $groupedDetails->get('female') ?? [],
+                    'male' => $this->getCategoryClassesWithSelection(
+                        $groupedCategoryClasses->get('male', collect()), 
+                        $groupedDetails->get('male', collect())
+                    ),
+                    'female' => $this->getCategoryClassesWithSelection(
+                        $groupedCategoryClasses->get('female', collect()), 
+                        $groupedDetails->get('female', collect())
+                    ),
                 ],
             ];
-        
+    
             return response()->json($data, 200);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Unable to fetch data', 'message' => $e->getMessage()], 500);
         }   
     }
+    
+    private function getCategoryClassesWithSelection($allCategoryClasses, $selectedCategoryClasses)
+    {
+        // Filter out any duplicates and add an isSelected attribute
+        $selectedCategoryClassIds = $selectedCategoryClasses->pluck('id')->toArray();
+    
+        // Combine all available category classes, ensuring no duplication, and add isSelected flag
+        return $allCategoryClasses->map(function ($categoryClass) use ($selectedCategoryClassIds) {
+            return [
+                'id' => $categoryClass->id,
+                'name' => $categoryClass->name,
+                'gender' => $categoryClass->gender,
+                'age_category_id' => $categoryClass->age_category_id,
+                'weight_min' => $categoryClass->weight_min,
+                'weight_max' => $categoryClass->weight_max,
+                'isSelected' => in_array($categoryClass->id, $selectedCategoryClassIds),
+            ];
+        })->unique('id'); // Remove any duplicates based on 'id'
+    }
+    
+
+
+
+
+
 
     /**
      * Update the specified resource in storage.
