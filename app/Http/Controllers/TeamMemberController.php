@@ -93,6 +93,7 @@ class TeamMemberController extends Controller
             'address' => 'required|string',
             'category' => 'required|in:Tanding,Seni,Olahraga',
             'age_category_id' => 'required|exists:age_categories,id',
+            'category_class_id' => 'required|exists:category_classes,id',
             'documents' => 'required|string',
         ]);
 
@@ -122,7 +123,7 @@ class TeamMemberController extends Controller
             'name' => 'required|string',
             'birth_place' => 'required|string',
             'birth_date' => 'required|date',
-            'gender' => 'required|in:M,F',
+            'gender' => 'required|in:male,female',
             'body_weight' => 'nullable|numeric',
             'body_height' => 'nullable|numeric',
             'nik' => 'required|string|max:16',
@@ -135,6 +136,7 @@ class TeamMemberController extends Controller
             'address' => 'required|string',
             'category' => 'required|in:Tanding,Seni',
             'age_category_id' => 'required|exists:age_categories,id',
+            'category_class_id' => 'required|exists:category_classes,id',
             'documents' => 'required|string',
         ]);
 
@@ -160,6 +162,7 @@ class TeamMemberController extends Controller
             'address' => $data['address'],
             'category' => $data['category'],
             'age_category_id' => $data['age_category_id'],
+            'category_class_id' => $data['category_class_id'],
             'documents' => $data['documents'],
         ]); 
 

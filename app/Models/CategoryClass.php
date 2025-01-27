@@ -19,4 +19,9 @@ class CategoryClass extends Model
     {
         return $this->hasMany(MatchClasificationDetail::class);
     }
+
+    public function teamMembers()
+    {
+        return $this->hasMany(TeamMember::class);
+    }
 }

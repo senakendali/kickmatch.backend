@@ -40,6 +40,44 @@ class CategoryClassController extends Controller
         }
     }
 
+    public function fetchClass($ageCategoryId, Request $request)
+    {
+        try {
+            // Get query parameters from the request
+            $gender = $request->query('gender');
+            $body_weight = $request->query('body_weight');
+            $ageCategoryId = $request->query('age_category_id');
+            
+            // Start building the query with age_category_id
+            $categoryClassesQuery = CategoryClass::where('age_category_id', $ageCategoryId);
+
+            // Apply age category filter if it's provided
+            if ($ageCategoryId) {
+                $categoryClassesQuery->where('age_category_id', $ageCategoryId);
+            }
+
+            // Apply gender filter if it's provided
+            if ($gender) {
+                $categoryClassesQuery->where('gender', $gender);
+            }
+
+            // Apply weight range filter if it's provided
+            if ($body_weight) {
+                $categoryClassesQuery->where(function ($query) use ($body_weight) {
+                    $query->where('weight_min', '<=', $body_weight)
+                          ->where('weight_max', '>=', $body_weight);
+                });
+            }
+
+            // Use pagination (for example, 10 results per page)
+            $categoryClasses = $categoryClassesQuery->get();
+
+            return response()->json($categoryClasses, 200);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Unable to fetch data', 'message' => $e->getMessage()], 500);
+        }
+    }
+
 
     // Get a single category class
     public function show($id)

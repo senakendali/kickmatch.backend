@@ -91,6 +91,7 @@ Route::get('countries', [CountryController::class, 'index']);
 //Category Classes
 Route::apiResource('category-classes', CategoryClassController::class);
 Route::get('category-classes/fetch-by-age-category/{ageCategoryId}', [CategoryClassController::class, 'fetchByAgeCategory']);
+Route::get('category-classes/fetch-class/{ageCategoryId}', [CategoryClassController::class, 'fetchClass']);
 
 //Match Clasifications
 Route::apiResource('match-clasifications', MatchClasificationController::class);

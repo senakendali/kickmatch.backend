@@ -25,10 +25,31 @@ class TeamMember extends Model
         return $this->belongsTo(Province::class);
     }
 
+    public function district()
+    {
+        return $this->belongsTo(District::class);
+    }
+
+    public function subdistrict()
+    {
+        return $this->belongsTo(Subdistrict::class);
+    }
+
+    public function ward()
+    {
+        return $this->belongsTo(Ward::class);
+    }
+
     public function ageCategory()
     {
         return $this->belongsTo(AgeCategory::class);
     }
+
+    public function categoryClass()
+    {
+        return $this->belongsTo(CategoryClass::class);
+    }
+    
 }
 
 
