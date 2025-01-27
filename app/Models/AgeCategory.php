@@ -19,4 +19,9 @@ class AgeCategory extends Model
     {
         return $this->hasMany(TeamMember::class);
     }
+
+    public function matchClasifications()
+    {
+        return $this->hasMany(MatchClasification::class);
+    }
 }

@@ -40,6 +40,35 @@ class TeamMemberController extends Controller
         }
     }
 
+    public function fetchTeamMembersBilling(){
+        try {
+            // Get the authenticated user
+            $user = auth()->user();
+
+            // Ensure the user is authenticated
+            if (!$user) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }    
+
+            // Determine if the user is an owner
+            if ($user->group->name === 'Owner') {
+                // Fetch all members without filtering by owner_id
+                $members = TeamMember::with('billing')->paginate(10);
+            } else {
+                // Fetch members filtered by the user's owner_id
+                $members = TeamMember::with('billing')
+                    ->whereHas('billing', function ($query) use ($user) {
+                        $query->where('user_id', $user->id);
+                    })
+                    ->paginate(10);
+            }
+
+            return response()->json($members, 200);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
 
 
     public function store(Request $request)

@@ -15,6 +15,11 @@ use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\CountryController;
 use App\Http\Controllers\TournamentController;
 use App\Http\Controllers\AgeCategoryController;
+use App\Http\Controllers\BillingController;
+use App\Http\Controllers\CategoryClassController;
+use App\Http\Controllers\MatchClasificationController;
+use App\Http\Controllers\MatchCategoryController;
+
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     $user = $request->user();
@@ -46,6 +51,7 @@ Route::prefix('tournaments')->group(function () {
     
     Route::middleware('auth:sanctum')->post('register', [TournamentController::class, 'contingentRegistration']);
     Route::get('highlight', [TournamentController::class, 'getHighlightedTournament']);
+    Route::get('active', [TournamentController::class, 'getActiveTournament']);
     Route::get('detail/{slug}', [TournamentController::class, 'getTournamentDetail']); 
     Route::get('{id}', [TournamentController::class, 'show']);
 });
@@ -76,9 +82,21 @@ Route::middleware('auth:sanctum')->apiResource('team-members', TeamMemberControl
 //Documents
 Route::get('/download-document/{filename}', [DocumentController::class, 'download']);
 
+//Billings
+Route::middleware('auth:sanctum')->apiResource('billings', BillingController::class);
+
 //countries
 Route::get('countries', [CountryController::class, 'index']);
 
+//Category Classes
+Route::apiResource('category-classes', CategoryClassController::class);
+Route::get('category-classes/fetch-by-age-category/{ageCategoryId}', [CategoryClassController::class, 'fetchByAgeCategory']);
+
+//Match Clasifications
+Route::apiResource('match-clasifications', MatchClasificationController::class);
+
+//Match Categories
+Route::apiResource('match-categories', MatchCategoryController::class);
 
 //Auth
 Route::post('/register', [AuthController::class, 'register']);

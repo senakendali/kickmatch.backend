@@ -35,5 +35,10 @@ class Tournament extends Model
         return $this->hasMany(TournamentContactPerson::class);
     }
 
+    public function billings()
+    {
+        return $this->hasMany(Billing::class);
+    }
+
    
 }

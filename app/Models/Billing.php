@@ -4,9 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class TournamentCategory extends Model
+class Billing extends Model
 {
-    protected $table = 'tournament_categories';
+    protected $table = 'billings';
     protected $guarded = ['created_at', 'updated_at'];
     protected $dates = ['created_at', 'updated_at'];
 
@@ -15,13 +15,11 @@ class TournamentCategory extends Model
         return $this->belongsTo(Tournament::class);
     }
 
-    public function matchCategory()
+    public function user()
     {
-        return $this->belongsTo(MatchCategory::class);
+        return $this->belongsTo(User::class);
     }
 
-    public function billingDetails()
-    {
-        return $this->hasMany(BillingDetail::class);
-    }
+    
+
 }

@@ -20,10 +20,29 @@ class TournamentController extends Controller
     {
         setlocale(LC_TIME, 'id_ID');
     }
-    public function index()
+    public function index(Request $request)
     {
-        $members = Tournament::paginate(10); // Paginate 10 items per page return response()->json($members);
-        return response()->json($members, 200); 
+        // Check for a query parameter to decide the mode
+        $fetchAll = $request->query('fetch_all', false);
+
+        if ($fetchAll) {
+            // Fetch all members without pagination
+            $members = Tournament::all();
+        } else {
+            // Fetch members with pagination
+            $members = Tournament::paginate(10); // Paginate 10 items per page
+        }
+
+        return response()->json($members, 200);
+    }
+    
+    function getActiveTournament(){
+        try {
+            $activeTournament = Tournament::where('status', 'active')->get();
+            return response()->json($activeTournament, 200);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'An error occurred', 'message' => $e->getMessage()], 500);
+        }
     }
 
     public function getHighlightedTournament()

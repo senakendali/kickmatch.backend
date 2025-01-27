@@ -14,4 +14,9 @@ class MatchCategory extends Model
     {
         return $this->hasMany(TournamentCategory::class);
     }
+
+   public function matchClasifications()
+    {
+        return $this->hasMany(MatchClasification::class);
+    }
 }

@@ -57,5 +57,10 @@ class User extends Authenticatable
         return $this->belongsTo(UserGroup::class, 'group_id'); 
     }
 
+    public function billings()
+    {
+        return $this->hasMany(Billing::class);
+    }
+
     
 }
