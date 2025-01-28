@@ -40,5 +40,10 @@ class Tournament extends Model
         return $this->hasMany(Billing::class);
     }
 
+    public function championshipCategories()
+    {
+        return $this->hasMany(ChampionshipCategory::class);
+    }
+
    
 }

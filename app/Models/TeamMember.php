@@ -49,6 +49,16 @@ class TeamMember extends Model
     {
         return $this->belongsTo(CategoryClass::class);
     }
+
+    public function championshipCategory()
+    {
+        return $this->belongsTo(ChampionshipCategory::class);
+    }
+
+    public function matchCategory()
+    {
+        return $this->belongsTo(MatchCategory::class);
+    }
     
 }
 

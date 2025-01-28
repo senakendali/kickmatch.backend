@@ -10,9 +10,12 @@ use Illuminate\Support\Facades\Log;
 
 class TeamMemberController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         try {
+             // Check for a query parameter to decide the mode
+            $fetchAll = $request->query('fetch_all', false);
+
             // Get the authenticated user
             $user = auth()->user();
 
@@ -24,14 +27,26 @@ class TeamMemberController extends Controller
             // Determine if the user is an owner
             if ($user->group->name === 'Owner') {
                 // Fetch all members without filtering by owner_id
-                $members = TeamMember::with('contingent')->paginate(10);
+                $members = TeamMember::with(['contingent', 'championshipCategory'])->paginate(10);
             } else {
-                // Fetch members filtered by the user's owner_id
-                $members = TeamMember::with('contingent')
+                if ($fetchAll) {
+                    // Fetch all members without pagination
+                   
+                    $members = TeamMember::with(['contingent', 'championshipCategory'])
+                    ->whereHas('contingent', function ($query) use ($user) {
+                        $query->where('owner_id', $user->id);
+                    })
+                    ->get();
+                } else {
+                    // Fetch members filtered by the user's owner_id
+                    $members = TeamMember::with(['contingent', 'championshipCategory'])
                     ->whereHas('contingent', function ($query) use ($user) {
                         $query->where('owner_id', $user->id);
                     })
                     ->paginate(10);
+                }
+
+                
             }
 
             return response()->json($members, 200);
@@ -91,7 +106,8 @@ class TeamMemberController extends Controller
             'subdistrict_id' => 'required|exists:subdistricts,id',
             'ward_id' => 'required|exists:wards,id',
             'address' => 'required|string',
-            'category' => 'required|in:Tanding,Seni,Olahraga',
+            'championship_category_id' => 'required|exists:championship_categories,id',
+            'match_category_id' => 'required|exists:match_categories,id',
             'age_category_id' => 'required|exists:age_categories,id',
             'category_class_id' => 'required|exists:category_classes,id',
             'documents' => 'required|string',
@@ -134,7 +150,8 @@ class TeamMemberController extends Controller
             'subdistrict_id' => 'required|exists:subdistricts,id',
             'ward_id' => 'required|exists:wards,id',
             'address' => 'required|string',
-            'category' => 'required|in:Tanding,Seni',
+            'championship_category_id' => 'required|exists:championship_categories,id',
+            'match_category_id' => 'required|exists:match_categories,id',
             'age_category_id' => 'required|exists:age_categories,id',
             'category_class_id' => 'required|exists:category_classes,id',
             'documents' => 'required|string',
@@ -160,7 +177,8 @@ class TeamMemberController extends Controller
             'subdistrict_id' => $data['subdistrict_id'],
             'ward_id' => $data['ward_id'],
             'address' => $data['address'],
-            'category' => $data['category'],
+            'championship_category_id' => $data['championship_category_id'],
+            'match_category_id' => $data['match_category_id'],
             'age_category_id' => $data['age_category_id'],
             'category_class_id' => $data['category_class_id'],
             'documents' => $data['documents'],

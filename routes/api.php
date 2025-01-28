@@ -19,7 +19,7 @@ use App\Http\Controllers\BillingController;
 use App\Http\Controllers\CategoryClassController;
 use App\Http\Controllers\MatchClasificationController;
 use App\Http\Controllers\MatchCategoryController;
-
+use App\Http\Controllers\ChampionshipCategoryController;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     $user = $request->user();
@@ -66,6 +66,9 @@ Route::apiResource('subdistricts', SubdistrictController::class);
 Route::apiResource('wards', WardController::class);
 //Age Categories
 Route::apiResource('age-categories', AgeCategoryController::class);
+
+//Championship Categories
+Route::apiResource('championship-categories', ChampionshipCategoryController::class);
 
 //Navigation Menus
 Route::get('navigation-menus/fetch-all', [NavigationMenuController::class, 'fetchAllNavigation']);
