@@ -20,6 +20,7 @@ use App\Http\Controllers\CategoryClassController;
 use App\Http\Controllers\MatchClasificationController;
 use App\Http\Controllers\MatchCategoryController;
 use App\Http\Controllers\ChampionshipCategoryController;
+use App\Http\Controllers\PermissionController;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     $user = $request->user();
@@ -35,6 +36,9 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
         'role_names' => $roles, // Returns a list of role names
     ];
 });
+
+// Permissions
+Route::middleware(['auth:sanctum'])->get('/user/permissions', [PermissionController::class, 'getUserPermissions']);
 
 // Menus
 Route::middleware('auth:sanctum')->get('/menus', [MenuController::class, 'index']);
@@ -86,6 +90,9 @@ Route::middleware('auth:sanctum')->apiResource('team-members', TeamMemberControl
 Route::get('/download-document/{filename}', [DocumentController::class, 'download']);
 
 //Billings
+Route::middleware('auth:sanctum')->post('billings/add-member', [BillingController::class, 'addMember']);
+Route::middleware('auth:sanctum')->put('/billings/{paymentId}/update-document', [BillingController::class, 'updateDocument']);
+Route::middleware('auth:sanctum')->put('/billings/{paymentId}/confirm-payment', [BillingController::class, 'confirmPayment']);
 Route::middleware('auth:sanctum')->apiResource('billings', BillingController::class);
 
 //countries

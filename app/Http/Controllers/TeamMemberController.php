@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\TeamMember;
+use App\Models\BillingDetail;
 use App\Models\AgeCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -13,7 +14,7 @@ class TeamMemberController extends Controller
     public function index(Request $request)
     {
         try {
-             // Check for a query parameter to decide the mode
+            // Check for a query parameter to decide the mode
             $fetchAll = $request->query('fetch_all', false);
 
             // Get the authenticated user
@@ -27,33 +28,42 @@ class TeamMemberController extends Controller
             // Determine if the user is an owner
             if ($user->group->name === 'Owner') {
                 // Fetch all members without filtering by owner_id
-                $members = TeamMember::with(['contingent', 'championshipCategory'])->paginate(10);
+                if ($fetchAll) {
+                    $members = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories'])->get();
+                }else{
+                    $members = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories'])->paginate(10);
+                }
+                
             } else {
                 if ($fetchAll) {
                     // Fetch all members without pagination
-                   
-                    $members = TeamMember::with(['contingent', 'championshipCategory'])
-                    ->whereHas('contingent', function ($query) use ($user) {
-                        $query->where('owner_id', $user->id);
-                    })
-                    ->get();
+                    $members = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories'])
+                        ->whereHas('contingent', function ($query) use ($user) {
+                            $query->where('owner_id', $user->id);
+                        })
+                        ->get();
                 } else {
                     // Fetch members filtered by the user's owner_id
-                    $members = TeamMember::with(['contingent', 'championshipCategory'])
-                    ->whereHas('contingent', function ($query) use ($user) {
-                        $query->where('owner_id', $user->id);
-                    })
-                    ->paginate(10);
+                    $members = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories'])
+                        ->whereHas('contingent', function ($query) use ($user) {
+                            $query->where('owner_id', $user->id);
+                        })
+                        ->paginate(10);
                 }
-
-                
             }
+
+            // Check if each member exists in BillingDetail
+            $members->transform(function ($member) {
+                $member->exists_in_billing_details = BillingDetail::where('team_member_id', $member->id)->exists();
+                return $member;
+            });
 
             return response()->json($members, 200);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
 
     public function fetchTeamMembersBilling(){
         try {

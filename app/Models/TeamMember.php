@@ -59,6 +59,11 @@ class TeamMember extends Model
     {
         return $this->belongsTo(MatchCategory::class);
     }
+
+    public function billingDetails()
+    {
+        return $this->hasMany(BillingDetail::class);
+    }
     
 }
 

@@ -19,4 +19,9 @@ class BillingDetail extends Model
     {
         return $this->belongsTo(TournamentCategory::class);
     }
+
+    public function teamMember()
+    {
+        return $this->belongsTo(TeamMember::class);
+    }
 }

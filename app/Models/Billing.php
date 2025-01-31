@@ -20,6 +20,11 @@ class Billing extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function billingDetails()
+    {
+        return $this->hasMany(BillingDetail::class);
+    }
+
     
 
 }

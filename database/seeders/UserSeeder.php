@@ -15,10 +15,17 @@ class UserSeeder extends Seeder
     public function run(): void
     {
 
+        
         $data['name'] =  'Administrator';
-        $data['email'] =  'admin@cendrawasih.id';
+        $data['email'] =  'admin@cjmanajemen.co.id';
         $data['password'] = Hash::make('System24jam');
        
-        User::create($data);
+        User::firstOrCreate($data);
+
+        $data['name'] =  'Administrator';
+        $data['email'] =  'owner@cjmanajemen.co.id';
+        $data['password'] = Hash::make('System24jam');
+       
+        User::firstOrCreate($data);
     }
 }
