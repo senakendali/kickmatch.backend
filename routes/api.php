@@ -21,6 +21,7 @@ use App\Http\Controllers\MatchClasificationController;
 use App\Http\Controllers\MatchCategoryController;
 use App\Http\Controllers\ChampionshipCategoryController;
 use App\Http\Controllers\PermissionController;
+use App\Http\Controllers\DrawingController;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     $user = $request->user();
@@ -108,6 +109,10 @@ Route::apiResource('match-clasifications', MatchClasificationController::class);
 
 //Match Categories
 Route::apiResource('match-categories', MatchCategoryController::class);
+
+//Drawings
+Route::get('show-bracket/{tournamentId}/{matchCategoryId}/{ageCategoryId}', [DrawingController::class, 'generateBracket']);
+Route::apiResource('drawings', DrawingController::class);
 
 //Auth
 Route::post('/register', [AuthController::class, 'register']);

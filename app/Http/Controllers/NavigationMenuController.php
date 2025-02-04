@@ -13,7 +13,7 @@ class NavigationMenuController extends Controller
         // Set the number of items per page to 10
         $menus = NavigationMenu::when($request->has('type'), function ($query) use ($request) {
             return $query->where('type', $request->type);
-        })->orderBy('order')->paginate(10); // Paginate 10 items per page
+        })->orderBy('order', 'asc')->paginate(10); // Paginate 10 items per page
 
         return response()->json($menus);
 
@@ -23,9 +23,8 @@ class NavigationMenuController extends Controller
     public function fetchAllNavigation()
     {
         try {
-            // Fetch all menus including parent relationships
-            $menus = NavigationMenu::with('parent')->get();
-
+            $menus = NavigationMenu::orderBy('order', 'asc')->get();
+            $menus->load('parent'); // Load the parent relationship separately
             return response()->json($menus, 200);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to fetch menus.'], 500);
