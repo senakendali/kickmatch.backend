@@ -25,7 +25,7 @@ class ParticipantSeeder extends Seeder
         // DB::table('team_members')->truncate();
 
         // Buat 70 peserta
-        for ($i = 0; $i < 130; $i++) {
+        for ($i = 0; $i < 9; $i++) {
             TeamMember::create([
                 'contingent_id' => $faker->randomElement($teamIds),
                 'name' => $faker->name,
