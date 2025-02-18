@@ -33,6 +33,7 @@ class DrawingController extends Controller
         ]);
     }
 
+    
     public function store(Request $request)
     {
         // Validasi request
@@ -41,44 +42,45 @@ class DrawingController extends Controller
             'match_category_id' => 'required|exists:match_categories,id',
             'age_category_id' => 'required|exists:age_categories,id',
         ]);
-    
+
         // Ambil semua kelas yang memiliki peserta
         $classes = TeamMember::select('category_class_id as class_id')
             ->distinct()
             ->pluck('class_id');
-    
+
         foreach ($classes as $classId) {
             // Ambil peserta berdasarkan kelas & acak urutannya
             $participants = TeamMember::where('category_class_id', $classId)->get()->shuffle();
             $totalParticipants = $participants->count();
-    
+
             // Jika peserta kurang dari 2, skip kelas ini
             if ($totalParticipants < 2) {
                 continue;
             }
-    
-            // Cari pangkat 2 terdekat untuk menentukan jumlah pertandingan knockout
+
+            // Cari pangkat 2 terdekat yang lebih besar dari total peserta
             $nextPowerOfTwo = pow(2, ceil(log($totalParticipants, 2)));
+
+            // Hitung jumlah peserta yang mendapatkan bye
             $byes = $nextPowerOfTwo - $totalParticipants;
-    
-            // **Pisahkan 2 peserta untuk bertanding di babak pertama jika jumlah peserta bukan kelipatan 2**
-            $firstRoundParticipants = collect();
-            if ($totalParticipants % 2 !== 0) {
-                $firstRoundParticipants = $participants->splice(0, 2);
-            }
-    
-            // **Peserta yang tersisa otomatis masuk ke babak kedua**
-            $remainingParticipants = $participants;
-    
-            // **Simpan semua pertandingan**
-            $round = 1;
+
+            // Pisahkan peserta yang mendapatkan bye
+            $byeParticipants = $participants->splice($totalParticipants - $byes);
+
+            // Inisialisasi variabel untuk menyimpan pertandingan sebelumnya
             $previousRoundMatches = [];
-    
-            // **Babak 1: Pertandingan pertama jika ada peserta ganjil**
-            if ($firstRoundParticipants->count() === 2) {
-                $p1 = $firstRoundParticipants->pop();
-                $p2 = $firstRoundParticipants->pop();
-    
+            $round = 1;
+
+            // Babak pertama (pendahuluan)
+            $currentRoundMatches = [];
+            $newParticipants = collect();
+
+            // Buat pertandingan untuk babak pertama
+            while ($participants->count() > 1) {
+                $p1 = $participants->shift();
+                $p2 = $participants->shift();
+
+                // Buat pertandingan
                 $match = TournamentMatch::create([
                     'tournament_id' => $validated['tournament_id'],
                     'match_category_id' => $validated['match_category_id'],
@@ -88,44 +90,70 @@ class DrawingController extends Controller
                     'team_member_2_id' => $p2->id,
                     'class_id' => $classId
                 ]);
-    
-                // Pemenang dari babak pertama masuk ke babak kedua
-                $remainingParticipants->push((object) ['match_id' => $match->id, 'id' => null]);
-                $previousRoundMatches[] = $match; // Simpan match untuk `next_match_id`
+
+                // Tambahkan pemenang ke daftar peserta untuk babak berikutnya
+                $newParticipants->push((object) ['match_id' => $match->id, 'id' => null]);
+                $currentRoundMatches[] = $match;
             }
-    
-            // **Naik ke Babak 2: Semua peserta tersisa masuk ke babak ini**
+
+            // Tambahkan peserta yang mendapatkan bye ke babak berikutnya
+            foreach ($byeParticipants as $byeParticipant) {
+                $newParticipants->push((object) ['match_id' => null, 'id' => $byeParticipant->id]);
+            }
+
+            // Atur next_match_id untuk pertandingan sebelumnya
+            if (!empty($previousRoundMatches)) {
+                $index = 0;
+                foreach ($currentRoundMatches as $match) {
+                    if (isset($previousRoundMatches[$index * 2])) {
+                        $previousRoundMatches[$index * 2]->update(['next_match_id' => $match->id]);
+                    }
+                    if (isset($previousRoundMatches[$index * 2 + 1])) {
+                        $previousRoundMatches[$index * 2 + 1]->update(['next_match_id' => $match->id]);
+                    }
+                    $index++;
+                }
+            }
+
+            // Perbarui peserta dan pertandingan sebelumnya untuk babak berikutnya
+            $remainingParticipants = $newParticipants;
+            $previousRoundMatches = $currentRoundMatches;
             $round++;
-            $matchCount = $remainingParticipants->count() / 2;
-    
-            while ($matchCount > 0) {
-                $newRoundParticipants = collect();
+
+            // Loop hingga hanya ada satu peserta yang tersisa
+            while ($remainingParticipants->count() > 1) {
                 $currentRoundMatches = [];
-    
+                $newParticipants = collect();
+
+                // Buat pertandingan untuk babak saat ini
                 while ($remainingParticipants->count() > 1) {
-                    $p1 = $remainingParticipants->pop();
-                    $p2 = $this->findOpponent($remainingParticipants, $p1);
-    
-                    if (!$p1) continue;
-    
-                    // **Buat pertandingan**
+                    $p1 = $remainingParticipants->shift();
+                    $p2 = $remainingParticipants->shift();
+
+                    // Jika salah satu peserta adalah null (bye), pemenangnya adalah peserta yang tidak null
+                    if ($p1 === null || $p2 === null) {
+                        $winner = $p1 ?? $p2;
+                        $newParticipants->push($winner);
+                        continue;
+                    }
+
+                    // Buat pertandingan
                     $match = TournamentMatch::create([
                         'tournament_id' => $validated['tournament_id'],
                         'match_category_id' => $validated['match_category_id'],
                         'age_category_id' => $validated['age_category_id'],
                         'round' => $round,
                         'team_member_1_id' => $p1->id,
-                        'team_member_2_id' => $p2->id ?? null,
+                        'team_member_2_id' => $p2->id,
                         'class_id' => $classId
                     ]);
-    
+
+                    // Tambahkan pemenang ke daftar peserta untuk babak berikutnya
+                    $newParticipants->push((object) ['match_id' => $match->id, 'id' => null]);
                     $currentRoundMatches[] = $match;
-    
-                    // Simpan referensi untuk babak berikutnya
-                    $newRoundParticipants->push((object) ['match_id' => $match->id, 'id' => null]);
                 }
-    
-                // **Atur `next_match_id` untuk babak berikutnya**
+
+                // Atur next_match_id untuk pertandingan sebelumnya
                 if (!empty($previousRoundMatches)) {
                     $index = 0;
                     foreach ($currentRoundMatches as $match) {
@@ -138,17 +166,22 @@ class DrawingController extends Controller
                         $index++;
                     }
                 }
-    
-                // Perbarui daftar peserta untuk babak berikutnya
-                $remainingParticipants = $newRoundParticipants;
+
+                // Perbarui peserta dan pertandingan sebelumnya untuk babak berikutnya
+                $remainingParticipants = $newParticipants;
                 $previousRoundMatches = $currentRoundMatches;
-                $matchCount /= 2;
                 $round++;
             }
         }
-    
+
         return response()->json(['message' => 'Tournament brackets generated successfully']);
     }
+
+
+
+
+
+
     
     /**
      * Mencari lawan dengan tim yang berbeda
@@ -164,6 +197,8 @@ class DrawingController extends Controller
         }
         return $participants->pop();
     }
+
+    
 
     public function generateBracket($tournamentId, $matchCategoryId, $ageCategoryId)
     {

@@ -20,14 +20,14 @@ class DrawingController extends Controller
             return [
                 'match_id' => $match->id,
                 'round' => $match->round,
-                'team_member_1_name' => $match->participant1->name ?? 'BYE',
-                'team_member_2_name' => $match->participant2->name ?? 'BYE',
-                'team_member_1_contingent' => $match->participant1->contingent->name ?? 'N/A',
-                'team_member_2_contingent' => $match->participant2->contingent->name ?? 'N/A',
-                'winner' => $match->winner_id ? $match->winner->name : null,
+                'team_member_1_name' => $match->participant1?->name ?? 'TBD',
+                'team_member_2_name' => $match->participant2?->name ?? 'TBD',
+                'team_member_1_contingent' => $match->participant1?->contingent?->name ?? 'TBD',
+                'team_member_2_contingent' => $match->participant2?->contingent?->name ?? 'TBD',
+                'winner' => $match->winner_id ? $match->winner->name : 'TBD',
             ];
         });
-
+        
         return response()->json([
             'data' => $matchesData
         ]);
@@ -57,175 +57,249 @@ class DrawingController extends Controller
                 continue;
             }
 
-            // Cari pangkat 2 terdekat untuk menentukan jumlah BYE
-            $nextPowerOfTwo = pow(2, ceil(log($totalParticipants, 2)));
-            $byes = $nextPowerOfTwo - $totalParticipants;
+            // Tentukan peserta yang akan mendapatkan bye
+            $byeParticipant = $participants->get(0); // Peserta pada posisi pertama
 
-            // Tambahkan BYE ke peserta
-            for ($i = 0; $i < $byes; $i++) {
-                $participants->push((object) [
-                    'id' => "BYE_$i", // ID unik untuk BYE
-                    'name' => 'BYE',
-                    'contingent_id' => null // Pastikan ada contingent_id untuk BYE
+            // Pisahkan peserta yang mendapatkan bye
+            $remainingParticipants = $participants->forget(0);
+
+            // Buat pertandingan untuk babak pendahuluan
+            $round = 1;
+            $previousRoundMatches = [];
+
+            // Babak pendahuluan jika ada
+            if ($byeParticipant) {
+                $match = TournamentMatch::create([
+                    'tournament_id' => $validated['tournament_id'],
+                    'match_category_id' => $validated['match_category_id'],
+                    'age_category_id' => $validated['age_category_id'],
+                    'round' => $round,
+                    'team_member_1_id' => $byeParticipant->id,
+                    'team_member_2_id' => null, // Tidak ada lawan
+                    'class_id' => $classId
                 ]);
+
+                // Pemenang dari babak pendahuluan masuk ke babak berikutnya
+                $remainingParticipants->push((object) ['match_id' => $match->id, 'id' => null]);
+                $previousRoundMatches[] = $match; // Simpan match untuk `next_match_id`
+                $round++;
             }
 
-            // Inisialisasi pertandingan
-            $round = 1;
-            $matchCount = $nextPowerOfTwo / 2;
+            // Loop hingga hanya ada satu peserta yang tersisa
+            while ($remainingParticipants->count() > 1) {
+                $currentRoundMatches = [];
+                $newParticipants = collect();
 
-            while ($matchCount > 0) {
-                $newRoundParticipants = collect();
+                // Buat pertandingan untuk babak saat ini
+                while ($remainingParticipants->count() > 1) {
+                    $p1 = $remainingParticipants->shift();
+                    $p2 = $remainingParticipants->shift();
 
-                while ($participants->count() > 1) {
-                    $p1 = $participants->pop();
-                    $p2 = $this->findOpponent($participants, $p1);
-
-                    // **Cek apakah peserta ada dan memiliki ID valid**
-                    if (!$p1 || !isset($p1->id)) {
-                        \Log::error("Peserta 1 tidak valid: ", (array) $p1);
+                    // Jika salah satu peserta adalah null (bye), pemenangnya adalah peserta yang tidak null
+                    if ($p1 === null || $p2 === null) {
+                        $winner = $p1 ?? $p2;
+                        $newParticipants->push($winner);
                         continue;
                     }
 
-                    if (!$p2) {
-                        \Log::error("Peserta 2 tidak valid: ", (array) $p2);
-                    }
-
-                    // **Gunakan NULL untuk peserta BYE dalam database**
-                    $p1_id = is_numeric($p1->id) ? $p1->id : null;
-                    $p2_id = $p2 && is_numeric($p2->id) ? $p2->id : null;
-
-                    // Jika kedua peserta null, skip pertandingan ini
-                    if ($p1_id === null && $p2_id === null) {
-                        \Log::error("Match skipped: p1 and p2 are null.");
-                        continue;
-                    }
-
-                    // **Pastikan p1 selalu memiliki ID**
-                    if ($p1_id === null) {
-                        \Log::error("Skipping match because p1_id is null.");
-                        continue;
-                    }
-
-                    // Simpan pertandingan
+                    // Buat pertandingan
                     $match = TournamentMatch::create([
                         'tournament_id' => $validated['tournament_id'],
                         'match_category_id' => $validated['match_category_id'],
                         'age_category_id' => $validated['age_category_id'],
                         'round' => $round,
-                        'team_member_1_id' => $p1_id,
-                        'team_member_2_id' => $p2_id,
+                        'team_member_1_id' => $p1->id,
+                        'team_member_2_id' => $p2->id,
                         'class_id' => $classId
                     ]);
 
-                    // Jika lawan adalah BYE, langsung menang
-                    if ($p2 && str_starts_with($p2->id, "BYE")) {
-                        $match->update(['winner_id' => $p1_id]);
-                        $newRoundParticipants->push($p1);
-                    } else {
-                        $newRoundParticipants->push((object) ['match_id' => $match->id]);
-                    }
+                    // Tambahkan pemenang ke daftar peserta untuk babak berikutnya
+                    $newParticipants->push((object) ['match_id' => $match->id, 'id' => null]);
+                    $currentRoundMatches[] = $match;
+                }
 
-                    // Jika p1 adalah BYE, langsung menang
-                    if (str_starts_with($p1->id, "BYE")) {
-                        $match->update(['winner_id' => $p2_id]);
-                        $newRoundParticipants->push($p2);
+                // Atur next_match_id untuk pertandingan sebelumnya
+                if (!empty($previousRoundMatches)) {
+                    $index = 0;
+                    foreach ($currentRoundMatches as $match) {
+                        if (isset($previousRoundMatches[$index * 2])) {
+                            $previousRoundMatches[$index * 2]->update(['next_match_id' => $match->id]);
+                        }
+                        if (isset($previousRoundMatches[$index * 2 + 1])) {
+                            $previousRoundMatches[$index * 2 + 1]->update(['next_match_id' => $match->id]);
+                        }
+                        $index++;
                     }
                 }
 
-                // Update peserta untuk ronde berikutnya
-                $participants = $newRoundParticipants;
+                // Perbarui peserta dan pertandingan sebelumnya untuk babak berikutnya
+                $remainingParticipants = $newParticipants;
+                $previousRoundMatches = $currentRoundMatches;
                 $round++;
-                $matchCount /= 2;
             }
         }
 
         return response()->json(['message' => 'Tournament brackets generated successfully']);
     }
 
+
+
+
+
+
+
+    
     /**
      * Mencari lawan dengan tim yang berbeda
      */
     private function findOpponent($participants, $p1)
     {
         foreach ($participants as $key => $p2) {
-            // Pastikan objek memiliki properti contingent_id sebelum diakses
             if (isset($p1->contingent_id) && isset($p2->contingent_id)) {
                 if ($p2->contingent_id !== $p1->contingent_id) {
                     return $participants->splice($key, 1)->first();
                 }
-            } else {
-                \Log::warning("Peserta tidak memiliki contingent_id", ['p1' => $p1, 'p2' => $p2]);
             }
         }
-
         return $participants->pop();
     }
 
     public function generateBracket($tournamentId, $matchCategoryId, $ageCategoryId)
     {
-       
-        // Ambil semua pertandingan yang sudah ada berdasarkan tournament_id, match_category_id, dan age_category_id
-        $matches = TournamentMatch::with(['participant1', 'participant2', 'participant1.contingent', 'participant2.contingent'])->where('tournament_id', $tournamentId)
+        $matches = TournamentMatch::with([
+                'participant1',
+                'participant2',
+                'participant1.contingent',
+                'participant2.contingent'
+            ])
+            ->where('tournament_id', $tournamentId)
             ->where('match_category_id', $matchCategoryId)
             ->where('age_category_id', $ageCategoryId)
             ->orderBy('round')
             ->get();
 
-        // Kelompokkan pertandingan berdasarkan round
         $bracket = [];
-        foreach ($matches as $match) {
-            $bracket[$match->round][] = $match;
-        }
-
-        // Tentukan pemenang dari pertandingan untuk digunakan di ronde selanjutnya
         $winners = [];
 
-        foreach ($bracket as $round => $matchesInRound) {
-            // Tentukan pemenang untuk setiap pertandingan
-            foreach ($matchesInRound as $match) {
-                // Cari pemenang berdasarkan winner_id
-                $winnerId = $match->winner_id;
+        foreach ($matches as $match) {
+            $participant1 = $match->participant1;
+            $participant2 = $match->participant2;
 
-                // Jika pemenang adalah peserta BYE, otomatis pemenangnya adalah peserta yang tidak mendapat BYE
-                if (!$winnerId && str_starts_with($match->team_member_1_id, 'BYE')) {
-                    $winnerId = $match->team_member_2_id;
-                } elseif (!$winnerId && str_starts_with($match->team_member_2_id, 'BYE')) {
-                    $winnerId = $match->team_member_1_id;
-                }
+            $bracket[$match->round][] = [
+                'match_id' => $match->id,
+                'round' => $match->round,
+                'player1' => [
+                    'id' => $participant1?->id ?? null,
+                    'name' => $participant1?->name ?? 'TBD',
+                    'contingent' => $participant1?->contingent?->name ?? 'TBD',
+                    'winner' => $match->winner_id === $participant1?->id,
+                ],
+                'player2' => [
+                    'id' => $participant2?->id ?? null,
+                    'name' => $participant2?->name ?? 'TBD',
+                    'contingent' => $participant2?->contingent?->name ?? 'TBD',
+                    'winner' => $match->winner_id === $participant2?->id,
+                ],
+            ];
 
-                // Masukkan pemenang ke dalam array winners untuk ronde berikutnya
-                $winners[$round + 1][] = $winnerId;
+            // Tentukan pemenang untuk ronde berikutnya
+            if ($match->winner_id) {
+                $winners[$match->round + 1][] = $match->winner_id;
+            } else {
+                $winners[$match->round + 1][] = "TBD";
             }
         }
 
-        // Menyusun final bracket (babak final)
-        $finalMatch = $this->buildFinalBracket($winners);
+        $bracket = $this->addNextRounds($bracket, $winners);
 
         return response()->json([
-            'bracket' => $bracket,
+            'bracket' => $this->formatBracketForVue($bracket),
             'winners' => $winners,
-            'finalMatch' => $finalMatch
+            'finalMatch' => $this->buildFinalBracket($winners)
         ]);
+    }
+
+
+    private function formatBracketForVue($bracket)
+    {
+        $formattedBracket = [];
+
+        foreach ($bracket as $round => $matches) {
+            $formattedMatches = [];
+
+            foreach ($matches as $match) {
+                $formattedMatches[] = [
+                    'player1' => [
+                        'id' => $match['player1']['id'],
+                        'name' => $match['player1']['name'],
+                        'winner' => $match['player1']['winner'],
+                    ],
+                    'player2' => [
+                        'id' => $match['player2']['id'],
+                        'name' => $match['player2']['name'],
+                        'winner' => $match['player2']['winner'],
+                    ],
+                ];
+            }
+
+            $formattedBracket[] = [
+                'round' => $round,
+                'matches' => $formattedMatches
+            ];
+        }
+
+        return $formattedBracket;
+    }
+
+
+
+    private function addNextRounds($bracket, $winners)
+    {
+        $maxRounds = count($bracket);
+        for ($round = 1; $round <= $maxRounds; $round++) {
+            if (!isset($bracket[$round]) && isset($winners[$round])) {
+                $nextRoundMatches = [];
+
+                for ($i = 0; $i < count($winners[$round]); $i += 2) {
+                    $participant1 = $winners[$round][$i] ?? "TBD";
+                    $participant2 = $winners[$round][$i + 1] ?? "TBD";
+
+                    $nextRoundMatches[] = [
+                        'match_id' => "TBD",
+                        'round' => $round,
+                        'team_member_1_name' => $participant1 === "TBD" ? "TBD" : $this->getParticipantName($participant1),
+                        'team_member_2_name' => $participant2 === "TBD" ? "TBD" : $this->getParticipantName($participant2),
+                        'team_member_1_contingent' => "TBD",
+                        'team_member_2_contingent' => "TBD",
+                        'winner' => "TBD",
+                    ];
+                }
+                $bracket[$round] = $nextRoundMatches;
+            }
+        }
+
+        return $bracket;
+    }
+
+    private function getParticipantName($participantId)
+    {
+        if ($participantId === "TBD") return "TBD";
+
+        $participant = TournamentParticipant::find($participantId);
+        return $participant ? $participant->name : "TBD";
     }
 
     private function buildFinalBracket($winners)
     {
-        // Cari pemenang untuk final match
-        $finalParticipants = [];
-        
-        // Ambil pemenang dari ronde terakhir
-        if (isset($winners)) {
-            $finalParticipants = array_slice($winners, -2); // Ambil 2 pemenang terakhir untuk final
-        }
+        $finalParticipants = array_slice($winners, -2);
 
-        // Kembalikan data untuk final match
         return [
             'final_match' => [
                 'participants' => $finalParticipants
             ]
         ];
     }
+
 
     public function show($id)
     {
