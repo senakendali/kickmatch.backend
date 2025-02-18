@@ -74,6 +74,7 @@ class AuthController extends Controller
                 'name' => $request->person_responsible, // Assuming 'name' is for the person's name
                 'email' => $request->email,
                 'group_id' => 3,
+                'role_id' => 3,
                 'password' => Hash::make($request->password), // Hash the password before saving
             ]);
 
