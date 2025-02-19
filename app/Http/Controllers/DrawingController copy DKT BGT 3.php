@@ -34,7 +34,7 @@ class DrawingController extends Controller
         ]);
     }
 
-    public function store(Request $request)
+public function store(Request $request)
 {
     try {
         DB::beginTransaction(); // Mulai transaksi
@@ -92,22 +92,19 @@ class DrawingController extends Controller
             }
 
             // **Atur Pemenang Babak Pendahuluan**
-            $matchSlots->prepend($preliminaryWinners->shift() ?? 'TBD'); // Pemenang Match 1 atau TBD
-            $matchSlots->push($preliminaryWinners->shift() ?? 'TBD'); // Pemenang Match 2 atau TBD
+            $matchSlots->prepend($preliminaryWinners->shift()); // Pemenang Match 1 masuk slot 1
+            $matchSlots->push($preliminaryWinners->shift()); // Pemenang Match 2 masuk slot 8
 
             // **Buat Pertandingan Babak Kedua**
             $secondRoundMatches = collect();
             for ($i = 0; $i < 8; $i += 2) {
-                $team1 = $matchSlots[$i] ?? null;
-                $team2 = $matchSlots[$i + 1] ?? 'TBD'; // Default TBD jika tidak ada lawan
-
                 $match = TournamentMatch::create([
                     'tournament_id' => $validated['tournament_id'],
                     'match_category_id' => $validated['match_category_id'],
                     'age_category_id' => $validated['age_category_id'],
                     'round' => $round,
-                    'team_member_1_id' => $team1,
-                    'team_member_2_id' => is_numeric($team2) ? $team2 : null, // Jika TBD, set null
+                    'team_member_1_id' => $matchSlots[$i],
+                    'team_member_2_id' => $matchSlots[$i + 1],
                     'class_id' => $classId
                 ]);
 
@@ -167,8 +164,6 @@ class DrawingController extends Controller
         return response()->json(['error' => $e->getMessage()], 500);
     }
 }
-
-    
 
 
 

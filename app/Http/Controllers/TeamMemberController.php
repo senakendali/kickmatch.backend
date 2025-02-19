@@ -206,9 +206,12 @@ class TeamMemberController extends Controller
 
     public function destroy($id)
     {
-        $teamMember = TeamMember::findOrFail($id);
-        $teamMember->delete();
-
-        return response()->json(['message' => 'Deleted successfully'], 200);
+        try {
+            $teamMember = TeamMember::findOrFail($id);
+            $teamMember->delete();
+            return response()->json(['message' => 'Deleted successfully'], 200);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
     }
 }
