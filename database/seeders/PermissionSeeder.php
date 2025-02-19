@@ -48,8 +48,8 @@ class PermissionSeeder extends Seeder
             ],
             'user' => [
                 'view dashboard', 'register', 'download', 
-                'view contingent', 'create contingent', 'edit contingent', 'delete contingent',
-                'view member', 'create member', 'edit member', 'delete member',
+                'view contingent', 'create contingent', 'edit contingent', 
+                'view member', 'create member', 'edit member', 
                 'view payment', 'create payment', 'edit payment', 'delete payment', 'upload payment struk',                
             ]
         ];
