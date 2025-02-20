@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\CategoryClass;
+use App\Models\AgeCategory;
+use App\Models\TeamMember;
 
 class CategoryClassController extends Controller
 {
@@ -17,6 +19,43 @@ class CategoryClassController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => 'Unable to fetch data', 'message' => $e->getMessage()], 500);
         }
+    }
+
+    public function getClassOnTeamMember(Request $request)
+    {
+        // Get the age_category_id from the query parameters
+        $ageCategoryId = $request->query('age_category_id', null);
+
+        // Initialize the query builder for TeamMember
+        $query = TeamMember::query();
+
+        // Apply the age_category_id filter if it's provided
+        if ($ageCategoryId) {
+            $query->where('age_category_id', $ageCategoryId);
+        }
+
+        // Fetch distinct class_id with their associated class names and count of team members
+        $classes = $query->select('category_class_id')
+            ->with('categoryClass') // Eager load the related CategoryClass model
+            ->groupBy('category_class_id') // Group by class_id
+            ->get()
+            ->map(function ($member) {
+                return [
+                    'class_id' => $member->category_class_id,
+                    'gender' => $member->categoryClass->gender,
+                    'class_name' => $member->categoryClass->name, // Assuming the class name is in 'name' column
+                    'weight_min' => $member->categoryClass->weight_min,
+                    'weight_max' => $member->categoryClass->weight_max,
+                    'team_member_count' => TeamMember::where('category_class_id', $member->category_class_id)
+                        ->when(request()->query('age_category_id'), function ($query) {
+                            // Filter by age_category_id if provided
+                            return $query->where('age_category_id', request()->query('age_category_id'));
+                        })
+                        ->count(), // Count the members in the class
+                ];
+            });
+
+        return response()->json($classes);
     }
 
     public function fetchByAgeCategory($ageCategoryId)

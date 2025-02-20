@@ -34,6 +34,29 @@ class DrawingController extends Controller
     }
 
     
+    /**
+     * Store a newly created tournament brackets in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    /**
+     * @OA\Post(
+     *     path="/api/drawings",
+     *     summary="Generate tournament brackets",
+     *     tags={"Drawings"},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="tournament_id", type="integer", example=1),
+     *             @OA\Property(property="match_category_id", type="integer", example=1),
+     *             @OA\Property(property="age_category_id", type="integer", example=1),
+     *         ),
+     *     ),
+     *     @OA\Response(response=200, description="Tournament brackets generated successfully"),
+     * )
+     */
     public function store(Request $request)
 {
     $validated = $request->validate([

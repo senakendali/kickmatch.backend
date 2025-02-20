@@ -2,6 +2,9 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Exports\TeamMembersExport;
+use Maatwebsite\Excel\Facades\Excel;
+
 use App\Http\Controllers\ProvinceController;
 use App\Http\Controllers\DistrictController;
 use App\Http\Controllers\SubdistrictController;
@@ -22,6 +25,7 @@ use App\Http\Controllers\MatchCategoryController;
 use App\Http\Controllers\ChampionshipCategoryController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\DrawingController;
+
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     $user = $request->user();
@@ -84,7 +88,11 @@ Route::middleware('auth:sanctum')->get('contingents/fetch-all', [ContingentContr
 Route::middleware('auth:sanctum')->get('contingents/my-contingents', [ContingentController::class, 'checkMyContingentsStatus']);
 Route::middleware('auth:sanctum')->apiResource('contingents', ContingentController::class);
 
+
 //Team Members
+Route::get('/team-members/export', function () {
+    return Excel::download(new TeamMembersExport, 'team_members.xlsx');
+});
 Route::middleware('auth:sanctum')->apiResource('team-members', TeamMemberController::class);
 
 //Documents
@@ -103,6 +111,7 @@ Route::get('countries', [CountryController::class, 'index']);
 Route::apiResource('category-classes', CategoryClassController::class);
 Route::get('category-classes/fetch-by-age-category/{ageCategoryId}', [CategoryClassController::class, 'fetchByAgeCategory']);
 Route::get('category-classes/fetch-class/{ageCategoryId}', [CategoryClassController::class, 'fetchClass']);
+Route::get('fetch-available-class', [CategoryClassController::class, 'getClassOnTeamMember']);
 
 //Match Clasifications
 Route::apiResource('match-clasifications', MatchClasificationController::class);
@@ -118,3 +127,8 @@ Route::apiResource('drawings', DrawingController::class);
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
+
+//Export
+
+
+
