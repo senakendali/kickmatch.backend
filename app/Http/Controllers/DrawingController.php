@@ -34,96 +34,119 @@ class DrawingController extends Controller
         ]);
     }
 
+    
     public function store(Request $request)
-{
-    try {
-        DB::beginTransaction(); // Mulai transaksi
+    {
+        try {
+            DB::beginTransaction(); // Mulai transaksi
 
-        $validated = $request->validate([
-            'tournament_id' => 'required|exists:tournaments,id',
-            'match_category_id' => 'required|exists:match_categories,id',
-            'age_category_id' => 'required|exists:age_categories,id',
-        ]);
+            $validated = $request->validate([
+                'tournament_id' => 'required|exists:tournaments,id',
+                'match_category_id' => 'required|exists:match_categories,id',
+                'age_category_id' => 'required|exists:age_categories,id',
+            ]);
 
-        $classes = TeamMember::select('category_class_id as class_id')
-            ->distinct()
-            ->pluck('class_id');
+            $classes = TeamMember::select('category_class_id as class_id')
+                ->distinct()
+                ->pluck('class_id');
 
-        foreach ($classes as $classId) {
-            $participants = TeamMember::where('category_class_id', $classId)->get()->shuffle();
-            $totalParticipants = $participants->count();
+            foreach ($classes as $classId) {
+                $participants = TeamMember::where('category_class_id', $classId)->get()->shuffle();
+                $totalParticipants = $participants->count();
 
-            if ($totalParticipants < 2) {
-                continue; // Skip jika peserta kurang dari 2
-            }
+                if ($totalParticipants < 2) {
+                    continue; // Skip jika peserta kurang dari 2
+                }
 
-            $round = 1;
-            $preliminaryMatches = max(0, $totalParticipants - 8); // Jumlah pertandingan pendahuluan
-            $preliminaryWinners = collect(); // Simpan ID pemenang babak pendahuluan
-            $matchList = collect(); // Simpan semua match untuk mengatur next_match_id
+                // **Menyesuaikan jumlah peserta agar menjadi kekuatan 2**
+                $nearestPowerOfTwo = pow(2, ceil(log($totalParticipants, 2))); // Mendapatkan angka terdekat yang merupakan kekuatan 2
+                
+                /*return response()->json([
+                    'totalParticipants' => $totalParticipants,
+                    'nearestPowerOfTwo' => $nearestPowerOfTwo
+                ]);*/
+                if($nearestPowerOfTwo > $totalParticipants) {
+                    $extraParticipants =  $nearestPowerOfTwo - $totalParticipants;  
+                }else{
+                    $extraParticipants = $totalParticipants - $nearestPowerOfTwo;
+                }
+                
+                $preliminaryMatches = max(0, $extraParticipants); // Menyesuaikan jumlah pertandingan pendahuluan
+                $preliminaryWinners = collect();
+                $matchList = collect();
 
-            // **Babak Pendahuluan**
-            for ($i = 0; $i < $preliminaryMatches * 2; $i += 2) {
-                $p1 = $participants[$i];
-                $p2 = $participants[$i + 1];
+                /*return response()->json([
+                    'preliminaryWinners' => $preliminaryWinners,
+                    'matchList' => $matchList
+                ]);*/
 
-                $match = TournamentMatch::create([
-                    'tournament_id' => $validated['tournament_id'],
-                    'match_category_id' => $validated['match_category_id'],
-                    'age_category_id' => $validated['age_category_id'],
-                    'round' => $round,
-                    'team_member_1_id' => $p1->id,
-                    'team_member_2_id' => $p2->id,
-                    'class_id' => $classId
-                ]);
+                // **Babak Pendahuluan - Jika ada lebih dari 2 peserta yang tidak sesuai kekuatan 2**
+                for ($i = 0; $i < $preliminaryMatches * 2; $i += 2) {
+                    $p1 = $participants[$i];
+                    $p2 = $participants[$i + 1];
 
-                $preliminaryWinners->push($match->id);
-                $matchList->push($match->id);
-            }
+                    $match = TournamentMatch::create([
+                        'tournament_id' => $validated['tournament_id'],
+                        'match_category_id' => $validated['match_category_id'],
+                        'age_category_id' => $validated['age_category_id'],
+                        'round' => 1,
+                        'team_member_1_id' => $p1->id,
+                        'team_member_2_id' => $p2->id,
+                        'class_id' => $classId
+                    ]);
 
-            // **Babak Kedua**
-            $round++;
-            $remainingParticipants = $participants->slice($preliminaryMatches * 2)->values();
-            $matchSlots = collect();
+                    $preliminaryWinners->push($match->id);
+                    $matchList->push($match->id);
+                }
 
-            // Masukkan peserta yang langsung lolos ke babak kedua
-            foreach ($remainingParticipants as $p) {
-                $matchSlots->push($p->id);
-            }
+                // **Babak Kedua - Pemenang babak pendahuluan langsung lolos ke babak kedua**
+                $remainingParticipants = $participants->slice($preliminaryMatches * 2)->values();
+                $matchSlots = collect();
 
-            // **Atur Pemenang Babak Pendahuluan**
-            $matchSlots->prepend($preliminaryWinners->shift() ?? 'TBD'); // Pemenang Match 1 atau TBD
-            $matchSlots->push($preliminaryWinners->shift() ?? 'TBD'); // Pemenang Match 2 atau TBD
+                // Masukkan peserta yang langsung lolos ke babak kedua
+                foreach ($remainingParticipants as $p) {
+                    $matchSlots->push($p->id);
+                }
 
-            // **Buat Pertandingan Babak Kedua**
-            $secondRoundMatches = collect();
-            for ($i = 0; $i < 8; $i += 2) {
-                $team1 = $matchSlots[$i] ?? null;
-                $team2 = $matchSlots[$i + 1] ?? 'TBD'; // Default TBD jika tidak ada lawan
+                // **Tambahkan pemenang babak pendahuluan ke babak kedua**
+                foreach ($preliminaryWinners as $winnerId) {
+                    $matchSlots->push(null);
+                }
 
-                $match = TournamentMatch::create([
-                    'tournament_id' => $validated['tournament_id'],
-                    'match_category_id' => $validated['match_category_id'],
-                    'age_category_id' => $validated['age_category_id'],
-                    'round' => $round,
-                    'team_member_1_id' => $team1,
-                    'team_member_2_id' => is_numeric($team2) ? $team2 : null, // Jika TBD, set null
-                    'class_id' => $classId
-                ]);
 
-                $secondRoundMatches->push($match->id);
-                $matchList->push($match->id);
-            }
 
-            // **Update next_match_id Babak Pendahuluan ke Babak Kedua**
-            TournamentMatch::where('id', $matchList[0])->update(['next_match_id' => $secondRoundMatches[0]]);
-            TournamentMatch::where('id', $matchList[1])->update(['next_match_id' => $secondRoundMatches[3]]);
+                // **Atur pertandingan babak kedua berdasarkan match slots**
+                $secondRoundMatches = collect();
+                $round = 2;
+                for ($i = 0; $i < $matchSlots->count(); $i += 2) {
+                    // Jika peserta ganjil, otomatis dapat BYE
+                    $team1 = $matchSlots[$i] ?? null;
+                    $team2 = $matchSlots[$i + 1] ?? null;
 
-            // **Babak Semifinal**
-            $round++;
-            $knockoutMatches = collect();
-            for ($i = 0; $i < 4; $i += 2) {
-                $match = TournamentMatch::create([
+                    $match = TournamentMatch::create([
+                        'tournament_id' => $validated['tournament_id'],
+                        'match_category_id' => $validated['match_category_id'],
+                        'age_category_id' => $validated['age_category_id'],
+                        'round' => $round,
+                        'team_member_1_id' => $team1,
+                        'team_member_2_id' => $team2,
+                        'class_id' => $classId
+                    ]);
+
+                    $secondRoundMatches->push($match->id);
+                    $matchList->push($match->id);
+                }
+
+                // Update next_match_id untuk babak-babak yang sesuai
+                $secondRoundMatchIds = $secondRoundMatches->toArray();
+                for ($i = 0; $i < count($secondRoundMatchIds); $i++) {
+                    $nextMatchId = $secondRoundMatchIds[$i];
+                    TournamentMatch::where('id', $matchList[$i])->update(['next_match_id' => $nextMatchId]);
+                }
+
+                // **Babak Ketiga (Final)**
+                $round++;
+                $finalMatch = TournamentMatch::create([
                     'tournament_id' => $validated['tournament_id'],
                     'match_category_id' => $validated['match_category_id'],
                     'age_category_id' => $validated['age_category_id'],
@@ -133,45 +156,22 @@ class DrawingController extends Controller
                     'class_id' => $classId
                 ]);
 
-                $knockoutMatches->push($match->id);
-                $matchList->push($match->id);
+                // Update next_match_id untuk semifinal ke final
+                TournamentMatch::where('id', $secondRoundMatches[0])->update(['next_match_id' => $finalMatch->id]);
+                TournamentMatch::where('id', $secondRoundMatches[1])->update(['next_match_id' => $finalMatch->id]);
+
             }
 
-            // **Update next_match_id Babak Kedua ke Semifinal**
-            TournamentMatch::where('id', $secondRoundMatches[0])->update(['next_match_id' => $knockoutMatches[0]]);
-            TournamentMatch::where('id', $secondRoundMatches[1])->update(['next_match_id' => $knockoutMatches[0]]);
-            TournamentMatch::where('id', $secondRoundMatches[2])->update(['next_match_id' => $knockoutMatches[1]]);
-            TournamentMatch::where('id', $secondRoundMatches[3])->update(['next_match_id' => $knockoutMatches[1]]);
-
-            // **Final**
-            $round++;
-            $finalMatch = TournamentMatch::create([
-                'tournament_id' => $validated['tournament_id'],
-                'match_category_id' => $validated['match_category_id'],
-                'age_category_id' => $validated['age_category_id'],
-                'round' => $round,
-                'team_member_1_id' => null,
-                'team_member_2_id' => null,
-                'class_id' => $classId
-            ]);
-
-            // **Update next_match_id Semifinal ke Final**
-            TournamentMatch::where('id', $knockoutMatches[0])->update(['next_match_id' => $finalMatch->id]);
-            TournamentMatch::where('id', $knockoutMatches[1])->update(['next_match_id' => $finalMatch->id]);
+            DB::commit(); // Simpan transaksi
+            return response()->json(['message' => 'Tournament brackets generated successfully']);
+        } catch (\Exception $e) {
+            DB::rollBack(); // Batalkan transaksi jika terjadi error
+            return response()->json(['error' => $e->getMessage()], 500);
         }
-
-        DB::commit(); // Simpan transaksi
-        return response()->json(['message' => 'Tournament brackets generated successfully']);
-    } catch (\Exception $e) {
-        DB::rollBack(); // Batalkan transaksi jika terjadi error
-        return response()->json(['error' => $e->getMessage()], 500);
     }
-}
+
 
     
-
-
-
 
 
 

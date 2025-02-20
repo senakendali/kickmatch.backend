@@ -10,27 +10,38 @@ use Illuminate\Support\Facades\Hash;
 class ContingentController extends Controller
 {
     // Fetch all contingents
-    public function index()
+    public function index(Request $request)
     {
         try {
-            $user = auth()->user(); // Mendapatkan user yang sedang login
-        
-            // Pastikan eager loading untuk menghindari lazy loading
-            $user->load('group'); 
-        
-            if ($user->group && $user->group->name === 'Owner') {
-                $contingents = Contingent::paginate(10); // Default: tidak ada filter
-                
-            } else {
-                $contingents = Contingent::where('owner_id', $user->id)->paginate(10);
+            $user = auth()->user();
+            $search = $request->input('search', ''); // Mendapatkan parameter search dari request
+
+            $query = Contingent::query();
+
+            // Jika ada query pencarian, filter berdasarkan nama atau field lain
+            if ($search) {
+                $query->where('name', 'like', '%' . $search . '%')
+                    ->orWhere('pic_name', 'like', '%' . $search . '%')
+                    ->orWhere('pic_email', 'like', '%' . $search . '%')
+                    ->orWhere('pic_phone', 'like', '%' . $search . '%');
+                    
             }
-        
-            return response()->json($contingents, 200);
+
+            // Jika user bukan owner, filter berdasarkan pemilik kontingen
+            if ($user->group && $user->group->name !== 'Owner') {
+                $query->where('owner_id', $user->id);
+            }
+
+            $contingents = $query->withCount('teamMembers') // Menambahkan jumlah anggota tim
+                                ->paginate(10);
+
+            return response()->json($contingents);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
-        
     }
+
+    
 
     public function fetchAll(){
         try {

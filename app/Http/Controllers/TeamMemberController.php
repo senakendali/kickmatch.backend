@@ -16,9 +16,11 @@ class TeamMemberController extends Controller
         try {
             // Check for a query parameter to decide the mode
             $fetchAll = $request->query('fetch_all', false);
+            $is_payment_confirmation = $request->query('is_payment_confirmation', false);
 
             // Get the authenticated user
             $user = auth()->user();
+            $search = $request->input('search', ''); // Mendapatkan parameter search dari request
 
             // Ensure the user is authenticated
             if (!$user) {
@@ -29,11 +31,50 @@ class TeamMemberController extends Controller
             if ($user->group->name === 'Owner') {
                 // Fetch all members without filtering by owner_id
                 if ($fetchAll) {
-                    $members = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories'])->get();
-                }else{
-                    $members = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories'])->paginate(10);
+                    if ($is_payment_confirmation) {
+                        // Ambil data member yang ada di BillingDetail saat payment confirmation
+                        $members = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories'])
+                            ->whereHas('billingDetails')  // Pastikan hanya mengambil anggota yang ada di BillingDetail
+                            ->when($search, function ($query, $search) {
+                                // Apply search on both name and contingent name
+                                $query->where('name', 'like', '%' . $search . '%')
+                                    ->orWhereHas('contingent', function ($contingentQuery) use ($search) {
+                                        $contingentQuery->where('name', 'like', '%' . $search . '%');
+                                    })
+                                    ->orWhereHas('matchCategory', function ($matchCategoryQuery) use ($search) {
+                                        $matchCategoryQuery->where('name', 'like', '%' . $search . '%');
+                                    });
+                            })
+                            ->get();
+                    } else {
+                        // Ambil semua member tanpa filter
+                        $members = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories'])
+                            ->when($search, function ($query, $search) {
+                                // Apply search on both name and contingent name
+                                $query->where('name', 'like', '%' . $search . '%')
+                                    ->orWhereHas('contingent', function ($contingentQuery) use ($search) {
+                                        $contingentQuery->where('name', 'like', '%' . $search . '%');
+                                    })
+                                    ->orWhereHas('matchCategory', function ($matchCategoryQuery) use ($search) {
+                                        $matchCategoryQuery->where('name', 'like', '%' . $search . '%');
+                                    });
+                            })
+                            ->get();
+                    }
+                } else {
+                    $members = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories'])
+                        ->when($search, function ($query, $search) {
+                            // Apply search on both name and contingent name
+                            $query->where('name', 'like', '%' . $search . '%')
+                                ->orWhereHas('contingent', function ($contingentQuery) use ($search) {
+                                    $contingentQuery->where('name', 'like', '%' . $search . '%');
+                                })
+                                ->orWhereHas('matchCategory', function ($matchCategoryQuery) use ($search) {
+                                    $matchCategoryQuery->where('name', 'like', '%' . $search . '%');
+                                });
+                        })
+                        ->paginate(10);
                 }
-                
             } else {
                 if ($fetchAll) {
                     // Fetch all members without pagination
@@ -41,12 +82,32 @@ class TeamMemberController extends Controller
                         ->whereHas('contingent', function ($query) use ($user) {
                             $query->where('owner_id', $user->id);
                         })
+                        ->when($search, function ($query, $search) {
+                            // Apply search on both name and contingent name
+                            $query->where('name', 'like', '%' . $search . '%')
+                                ->orWhereHas('contingent', function ($contingentQuery) use ($search) {
+                                    $contingentQuery->where('name', 'like', '%' . $search . '%');
+                                })
+                                ->orWhereHas('matchCategory', function ($matchCategoryQuery) use ($search) {
+                                    $matchCategoryQuery->where('name', 'like', '%' . $search . '%');
+                                });
+                        })
                         ->get();
                 } else {
                     // Fetch members filtered by the user's owner_id
                     $members = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories'])
                         ->whereHas('contingent', function ($query) use ($user) {
                             $query->where('owner_id', $user->id);
+                        })
+                        ->when($search, function ($query, $search) {
+                            // Apply search on both name and contingent name
+                            $query->where('name', 'like', '%' . $search . '%')
+                                ->orWhereHas('contingent', function ($contingentQuery) use ($search) {
+                                    $contingentQuery->where('name', 'like', '%' . $search . '%');
+                                })
+                                ->orWhereHas('matchCategory', function ($matchCategoryQuery) use ($search) {
+                                    $matchCategoryQuery->where('name', 'like', '%' . $search . '%');
+                                });
                         })
                         ->paginate(10);
                 }
@@ -63,6 +124,7 @@ class TeamMemberController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
 
 
     public function fetchTeamMembersBilling(){
