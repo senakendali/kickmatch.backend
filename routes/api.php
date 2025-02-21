@@ -28,7 +28,7 @@ use App\Models\TeamMember;
 
 Route::get('/team-members/export', function () {
     // Ambil data dari database
-    $teamMembers = TeamMember::all();
+    $teamMembers = TeamMember::with('contingent')->get();
 
     // Membuat file Excel (CSV format) sebagai output
     $filename = 'team_members.xlsx';
@@ -39,12 +39,13 @@ Route::get('/team-members/export', function () {
         $file = fopen('php://output', 'w');
 
         // Menambahkan header kolom
-        fputcsv($file, ['ID', 'Nama', 'Tempat Lahir', 'Tanggal Lahir', 'Jenis Kelamin', 'Tinggi Badan', 'Berat Badan', 'NIK', 'Nomor Kartu Keluarga', 'Alamat']);
+        fputcsv($file, ['ID', 'Contingent', 'Nama', 'Tempat Lahir', 'Tanggal Lahir', 'Jenis Kelamin', 'Tinggi Badan', 'Berat Badan', 'NIK', 'Nomor Kartu Keluarga', 'Alamat']);
 
         // Menambahkan data ke dalam sheet
         foreach ($teamMembers as $teamMember) {
             fputcsv($file, [
                 $teamMember->id,
+                $teamMember->contingent->name,
                 $teamMember->name,
                 $teamMember->birth_place,
                 $teamMember->birth_date,
