@@ -25,40 +25,40 @@ use App\Http\Controllers\ChampionshipCategoryController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\DrawingController;
 use App\Models\TeamMember;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 Route::get('/team-members/export', function () {
     // Ambil data dari database
     $teamMembers = TeamMember::all();
 
-    // Membuat objek Spreadsheet baru
-    $spreadsheet = new Spreadsheet();
-    $sheet = $spreadsheet->getActiveSheet();
-
-    // Menambahkan header kolom
-    $sheet->setCellValue('A1', 'ID');
-    $sheet->setCellValue('B1', 'Nama');
-    $sheet->setCellValue('C1', 'Tempat Lahir');
-    $sheet->setCellValue('D1', 'Tanggal Lahir');
-
-    // Menambahkan data ke dalam sheet
-    $row = 2; // Mulai dari baris kedua setelah header
-    foreach ($teamMembers as $teamMember) {
-        $sheet->setCellValue('A' . $row, $teamMember->id);
-        $sheet->setCellValue('B' . $row, $teamMember->name);
-        $sheet->setCellValue('C' . $row, $teamMember->birth_place);
-        $sheet->setCellValue('D' . $row, $teamMember->birth_date);
-        $row++;
-    }
-
-    // Menulis file Excel ke dalam response
-    $writer = new Xlsx($spreadsheet);
-
-    // Mengirim file Excel ke browser untuk diunduh
+    // Membuat file Excel (CSV format) sebagai output
     $filename = 'team_members.xlsx';
-    return response()->stream(function () use ($writer) {
-        $writer->save('php://output');
+
+    // Set headers untuk file Excel
+    return response()->stream(function () use ($teamMembers) {
+        // Buka output stream untuk menulis ke browser
+        $file = fopen('php://output', 'w');
+
+        // Menambahkan header kolom
+        fputcsv($file, ['ID', 'Nama', 'Tempat Lahir', 'Tanggal Lahir', 'Jenis Kelamin', 'Tinggi Badan', 'Berat Badan', 'NIK', 'Nomor Kartu Keluarga', 'Alamat']);
+
+        // Menambahkan data ke dalam sheet
+        foreach ($teamMembers as $teamMember) {
+            fputcsv($file, [
+                $teamMember->id,
+                $teamMember->name,
+                $teamMember->birth_place,
+                $teamMember->birth_date,
+                $teamMember->gender,
+                $teamMember->body_height,
+                $teamMember->body_weight,
+                $teamMember->nik,
+                $teamMember->family_card_number,
+                $teamMember->address
+            ]);
+        }
+
+        // Menutup file setelah selesai
+        fclose($file);
     }, 200, [
         'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition' => "attachment; filename=\"$filename\"",
