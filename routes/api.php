@@ -24,6 +24,46 @@ use App\Http\Controllers\MatchCategoryController;
 use App\Http\Controllers\ChampionshipCategoryController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\DrawingController;
+use App\Models\TeamMember;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+
+Route::get('/team-members/export', function () {
+    // Ambil data dari database
+    $teamMembers = TeamMember::all();
+
+    // Membuat objek Spreadsheet baru
+    $spreadsheet = new Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+
+    // Menambahkan header kolom
+    $sheet->setCellValue('A1', 'ID');
+    $sheet->setCellValue('B1', 'Nama');
+    $sheet->setCellValue('C1', 'Tempat Lahir');
+    $sheet->setCellValue('D1', 'Tanggal Lahir');
+
+    // Menambahkan data ke dalam sheet
+    $row = 2; // Mulai dari baris kedua setelah header
+    foreach ($teamMembers as $teamMember) {
+        $sheet->setCellValue('A' . $row, $teamMember->id);
+        $sheet->setCellValue('B' . $row, $teamMember->name);
+        $sheet->setCellValue('C' . $row, $teamMember->birth_place);
+        $sheet->setCellValue('D' . $row, $teamMember->birth_date);
+        $row++;
+    }
+
+    // Menulis file Excel ke dalam response
+    $writer = new Xlsx($spreadsheet);
+
+    // Mengirim file Excel ke browser untuk diunduh
+    $filename = 'team_members.xlsx';
+    return response()->stream(function () use ($writer) {
+        $writer->save('php://output');
+    }, 200, [
+        'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition' => "attachment; filename=\"$filename\"",
+    ]);
+});
 
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
