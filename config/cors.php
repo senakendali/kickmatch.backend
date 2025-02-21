@@ -12,6 +12,7 @@ return [
     */
     'allowed_origins' => [
         'http://localhost:8080',  // Frontend app URL (replace with the correct URL)
+        'https://cjmanajemen.co.id',  // Additional frontend app URL
         // Add more allowed origins here
     ],
 
