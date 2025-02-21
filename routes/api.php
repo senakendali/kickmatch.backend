@@ -2,8 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Exports\TeamMembersExport;
-use Maatwebsite\Excel\Facades\Excel;
+
 
 use App\Http\Controllers\ProvinceController;
 use App\Http\Controllers\DistrictController;
@@ -90,9 +89,9 @@ Route::middleware('auth:sanctum')->apiResource('contingents', ContingentControll
 
 
 //Team Members
-Route::get('/team-members/export', function () {
+/*Route::get('/team-members/export', function () {
     return Excel::download(new TeamMembersExport, 'team_members.xlsx');
-});
+});*/
 Route::middleware('auth:sanctum')->apiResource('team-members', TeamMemberController::class);
 
 //Documents
