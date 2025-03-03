@@ -304,31 +304,27 @@ class TournamentController extends Controller
     }
 
     public function formatEventDate($startDate, $endDate) {
-       
-
         // Create the start and end dates
         $startDate = Carbon::createFromFormat('Y-m-d', $startDate);
         $endDate = Carbon::createFromFormat('Y-m-d', $endDate);
-
+    
         // Define the months in Indonesian
         $months = [
             1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April', 5 => 'Mei',
             6 => 'Juni', 7 => 'Juli', 8 => 'Agustus', 9 => 'September', 10 => 'Oktober',
             11 => 'November', 12 => 'Desember'
         ];
-
-        // Format the start and end dates
-        $startDay = $startDate->day;
-        $endDay = $endDate->day;
-        $monthYear = $months[$startDate->month] . ' ' . $startDate->year;
-
-        // Combine the parts into the desired format
-        $formattedDateRange = "$startDay-$endDay $monthYear";
-
-        return $formattedDateRange; // Output: 21-23 Februari 2025
-
+    
+        // If the month and year are the same for both dates
+        if ($startDate->month === $endDate->month && $startDate->year === $endDate->year) {
+            $formattedDateRange = $startDate->day . ' - ' . $endDate->day . ' ' . $months[$startDate->month] . ' ' . $startDate->year;
+        } else {
+            $formattedDateRange = $startDate->day . ' ' . $months[$startDate->month] . ' ' . $startDate->year . ' - ' . $endDate->day . ' ' . $months[$endDate->month] . ' ' . $endDate->year;
+        }
+    
+        return $formattedDateRange;
     }
-
+    
     public function contingentRegistration(Request $request)
     {
         // Validate the request
