@@ -99,6 +99,7 @@ Route::prefix('tournaments')->group(function () {
     // Custom route
     
     Route::middleware('auth:sanctum')->post('register', [TournamentController::class, 'contingentRegistration']);
+    Route::get('gallery', [TournamentController::class, 'getTournamentGallery']);
     Route::get('highlight', [TournamentController::class, 'getHighlightedTournament']);
     Route::get('active', [TournamentController::class, 'getActiveTournament']);
     Route::get('detail/{slug}', [TournamentController::class, 'getTournamentDetail']); 

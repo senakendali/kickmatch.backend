@@ -22,19 +22,45 @@ class TournamentController extends Controller
     }
     public function index(Request $request)
     {
-        // Check for a query parameter to decide the mode
+        // Check apakah fetch_all bernilai true atau false
         $fetchAll = $request->query('fetch_all', false);
 
         if ($fetchAll) {
-            // Fetch all members without pagination
-            $members = Tournament::all();
+            // Ambil semua data tanpa pagination dan order by id desc
+            $members = Tournament::orderBy('id', 'desc')->get();
         } else {
-            // Fetch members with pagination
-            $members = Tournament::paginate(10); // Paginate 10 items per page
+            // Ambil data dengan pagination 10 item per halaman dan order by id desc
+            $members = Tournament::orderBy('id', 'desc')->paginate(10);
         }
 
         return response()->json($members, 200);
     }
+
+
+    public function getTournamentGallery()
+    {
+        try {
+            $gallery = Tournament::orderBy('id', 'desc')->get()->map(function ($tournament) {
+                return [
+                    'id'       => $tournament->id,
+                    'name'     => $tournament->name,
+                    'slug'     => $tournament->slug,
+                    'document' => $tournament->document,
+                    'image'    => asset('banner/' . $tournament->image),
+                    'status'   => $tournament->status,
+                ];
+            });
+
+            return response()->json(['data' => $gallery], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error'   => 'An error occurred',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
     
     function getActiveTournament(){
         try {
