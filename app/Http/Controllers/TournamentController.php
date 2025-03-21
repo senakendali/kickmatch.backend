@@ -10,6 +10,9 @@ use App\Models\TournamentClass;
 use App\Models\TournamentActivity;
 use App\Models\MatchCategory;
 use App\Models\TournamentContingent;
+use App\Models\Contingent;
+use App\Models\TeamMember;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
@@ -354,8 +357,154 @@ class TournamentController extends Controller
         return response()->json(['message' => 'Contingents registered successfully.'], 200);
     }
 
-    
+    public function getTournamentStats($tournament_id)
+    {
+        // Get all tournament contingents
+        $tournamentContingents = TournamentContingent::where('tournament_id', $tournament_id)
+            ->with('contingent.teamMembers')
+            ->get();
 
+        // Count total contingents
+        $totalContingents = $tournamentContingents->count();
+
+        // Initialize counts
+        $totalMembers = 0;
+        $tandingCount = 0;
+        $seniCount = 0;
+
+        // Loop through each contingent and sum up members
+        foreach ($tournamentContingents as $tc) {
+            $teamMembers = $tc->contingent->teamMembers ?? collect();
+            
+            $totalMembers += $teamMembers->count();
+            $tandingCount += $teamMembers->where('championship_category_id', 1)->count();
+            $seniCount += $teamMembers->where('championship_category_id', 2)->count();
+        }
+
+        return response()->json([
+            'total_contingents' => $totalContingents,
+            'total_members' => $totalMembers,
+            'tanding' => $tandingCount,
+            'seni' => $seniCount
+        ], 200);
+    }
+
+    public function getContingentsWithStats($tournament_id)
+    {
+        // Get all contingents in the tournament
+        $tournamentContingents = TournamentContingent::where('tournament_id', $tournament_id)
+            ->with('contingent.teamMembers')
+            ->get();
+
+        // Format response data
+        $contingentsData = $tournamentContingents->map(function ($tc) {
+            $teamMembers = $tc->contingent->teamMembers ?? collect();
+
+            return [
+                'contingent_name' => $tc->contingent->name ?? 'Unknown', 
+                'total_members' => $teamMembers->count(),
+                'total_tanding' => $teamMembers->where('championship_category_id', 1)->count(),
+                'total_seni' => $teamMembers->where('championship_category_id', 2)->count(),
+            ];
+        });
+
+        return response()->json($contingentsData, 200);
+    }
+
+    public function summaryByProvince($tournamentId)
+    {
+        // Ambil semua kontingen yang ikut dalam turnamen tertentu
+        $contingents = Contingent::whereHas('tournamentContingents', function ($query) use ($tournamentId) {
+            $query->where('tournament_id', $tournamentId);
+        })
+        ->with('province')
+        ->get();
+
+        // Kelompokkan berdasarkan provinsi
+        $summary = $contingents->groupBy('province.name')->map(function ($items) {
+            return [
+                'total_contingents' => $items->count(),
+                'contingents' => $items->map(function ($contingent) {
+                    return [
+                        'id' => $contingent->id,
+                        'name' => $contingent->name,
+                    ];
+                }),
+            ];
+        });
+
+        return response()->json($summary);
+    }
+
+    public function getParticipantsByProvince($tournamentId)
+    {
+        $summary = TeamMember::selectRaw('provinces.name as province, COUNT(team_members.id) as total_participants')
+            ->join('provinces', 'team_members.province_id', '=', 'provinces.id')
+            ->whereHas('contingent.tournamentContingents', function ($query) use ($tournamentId) {
+                $query->where('tournament_id', $tournamentId);
+            })
+            ->groupBy('provinces.name')
+            ->orderByDesc('total_participants')
+            ->get();
+
+        return response()->json($summary);
+    }
+
+    public function getParticipantsByAgeCategory($tournamentId)
+    {
+        $summary = TeamMember::selectRaw('age_categories.name as age_category, COUNT(team_members.id) as total_participants')
+            ->join('age_categories', 'team_members.age_category_id', '=', 'age_categories.id')
+            ->whereHas('contingent.tournamentContingents', function ($query) use ($tournamentId) {
+                $query->where('tournament_id', $tournamentId);
+            })
+            ->groupBy('age_categories.name')
+            ->orderByDesc('total_participants')
+            ->get();
+
+        return response()->json($summary);
+    }
+
+    public function getParticipantsByCategoryClass($tournamentId)
+    {
+        // Ambil semua contingent_id yang terhubung dengan tournament_id
+        $contingentIds = TournamentContingent::where('tournament_id', $tournamentId)
+            ->pluck('contingent_id');
+
+        // Ambil jumlah peserta berdasarkan category_class_id dan join dengan category_classes
+        $participants = TeamMember::whereIn('contingent_id', $contingentIds)
+            ->join('category_classes', 'team_members.category_class_id', '=', 'category_classes.id')
+            ->join('age_categories', 'category_classes.age_category_id', '=', 'age_categories.id')
+            ->select(
+                'team_members.category_class_id',
+                'age_categories.name as age_category_name',
+                'category_classes.name as class_name',  
+                \DB::raw('COUNT(*) as total_participants')
+            )
+            ->groupBy('team_members.category_class_id', 'category_classes.name')
+            ->get();
+
+        return response()->json($participants);
+    }
+
+    public function getParticipantsByDistrict($tournamentId)
+    {
+        $participants = TeamMember::whereHas('contingent.tournamentContingents', function ($query) use ($tournamentId) {
+                $query->where('tournament_id', $tournamentId);
+            })
+            ->select('district_id', \DB::raw('COUNT(*) as total_participants'))
+            ->groupBy('district_id')
+            ->with('district') // Menghubungkan dengan model District
+            ->get()
+            ->map(function ($participant) {
+                return [
+                    'district_id' => $participant->district_id,
+                    'district_name' => optional($participant->district)->name, // Mengambil nama district jika tersedia
+                    'total_participants' => $participant->total_participants,
+                ];
+            });
+
+        return response()->json($participants);
+    }
 
 
 

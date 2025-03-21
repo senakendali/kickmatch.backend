@@ -24,4 +24,32 @@ class Contingent extends Model
     {
         return $this->belongsTo(Country::class);
     }
+
+    public function province()
+    {
+        return $this->belongsTo(Province::class);
+    }
+
+    public function district()
+    {
+        return $this->belongsTo(District::class);
+    }
+
+    public function subdistrict()
+    {
+        return $this->belongsTo(Subdistrict::class);
+    }
+
+    public function wards()
+    {
+        return $this->hasMany(Ward::class);
+    }
+
+
+    public function tournamentContingents()
+    {
+        return $this->hasMany(TournamentContingent::class);
+    }
+
+    
 }

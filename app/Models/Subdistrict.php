@@ -16,4 +16,14 @@ class Subdistrict extends Model
     {
         return $this->hasMany(Ward::class);
     }
+
+    public function contingents()
+    {
+        return $this->hasMany(Contingent::class);
+    }
+
+    public function teamMembers()
+    {
+        return $this->hasMany(TeamMember::class);
+    }
 }

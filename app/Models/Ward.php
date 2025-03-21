@@ -11,4 +11,14 @@ class Ward extends Model
     {
         return $this->belongsTo(Subdistrict::class);
     }
+
+    public function contingents()
+    {
+        return $this->hasMany(Contingent::class);
+    }
+
+    public function teamMembers()
+    {
+        return $this->hasMany(TeamMember::class);
+    }
 }

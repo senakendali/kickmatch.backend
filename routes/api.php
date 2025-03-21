@@ -24,6 +24,7 @@ use App\Http\Controllers\MatchCategoryController;
 use App\Http\Controllers\ChampionshipCategoryController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\DrawingController;
+use App\Http\Controllers\UserController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', function () {
@@ -97,13 +98,22 @@ Route::prefix('tournaments')->group(function () {
     Route::apiResource('', TournamentController::class);
 
     // Custom route
-    
     Route::middleware('auth:sanctum')->post('register', [TournamentController::class, 'contingentRegistration']);
     Route::get('gallery', [TournamentController::class, 'getTournamentGallery']);
     Route::get('highlight', [TournamentController::class, 'getHighlightedTournament']);
     Route::get('active', [TournamentController::class, 'getActiveTournament']);
     Route::get('detail/{slug}', [TournamentController::class, 'getTournamentDetail']); 
     Route::get('{id}', [TournamentController::class, 'show']);
+    Route::get('{tournament_id}/stats', [TournamentController::class, 'getTournamentStats']);
+    Route::get('{tournament_id}/contingents', [TournamentController::class, 'getContingentsWithStats']);
+    Route::get('{tournament_id}/contingents/summary-by-province', [TournamentController::class, 'summaryByProvince']);
+    Route::get('{tournament_id}/participants-by-province', [TournamentController::class, 'getParticipantsByProvince']);
+    Route::get('{tournament_id}/participants-by-age-category', [TournamentController::class, 'getParticipantsByAgeCategory']);
+    Route::get('{tournament_id}/participants-by-category-class', [TournamentController::class, 'getParticipantsByCategoryClass']);
+    Route::get('{tournament_id}/participants-by-district', [TournamentController::class, 'getParticipantsByDistrict']);
+
+    
+    
 });
 
 //Provinces
@@ -168,6 +178,8 @@ Route::apiResource('drawings', DrawingController::class);
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
+
+Route::get('/users/count', [UserController::class, 'countUsersWithRole']);
 
 //Export
 
