@@ -466,25 +466,31 @@ class TournamentController extends Controller
 
     public function getParticipantsByCategoryClass($tournamentId)
     {
-        // Ambil semua contingent_id yang terhubung dengan tournament_id
+        // Ambil contingent_id yang terhubung dengan tournament_id
         $contingentIds = TournamentContingent::where('tournament_id', $tournamentId)
-            ->pluck('contingent_id');
+            ->pluck('contingent_id')
+            ->toArray();
+
+        if (empty($contingentIds)) {
+            return response()->json([]);
+        }
 
         // Ambil jumlah peserta berdasarkan category_class_id dan join dengan category_classes
-        $participants = TeamMember::whereIn('contingent_id', $contingentIds)
+        $participants = TeamMember::whereIn('team_members.contingent_id', $contingentIds)
             ->join('category_classes', 'team_members.category_class_id', '=', 'category_classes.id')
             ->join('age_categories', 'category_classes.age_category_id', '=', 'age_categories.id')
             ->select(
                 'team_members.category_class_id',
                 'age_categories.name as age_category_name',
-                'category_classes.name as class_name',  
-                \DB::raw('COUNT(*) as total_participants')
+                'category_classes.name as class_name',
+                \DB::raw('COUNT(team_members.id) as total_participants')
             )
-            ->groupBy('team_members.category_class_id', 'category_classes.name')
+            ->groupBy('team_members.category_class_id', 'category_classes.name', 'age_categories.name')
             ->get();
 
         return response()->json($participants);
     }
+
 
     public function getParticipantsByDistrict($tournamentId)
     {
