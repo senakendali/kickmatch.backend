@@ -25,6 +25,7 @@ use App\Http\Controllers\ChampionshipCategoryController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\DrawingController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\TournamentMatchController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', function () {
@@ -111,6 +112,12 @@ Route::prefix('tournaments')->group(function () {
     Route::get('{tournament_id}/participants-by-age-category', [TournamentController::class, 'getParticipantsByAgeCategory']);
     Route::get('{tournament_id}/participants-by-category-class', [TournamentController::class, 'getParticipantsByCategoryClass']);
     Route::get('{tournament_id}/participants-by-district', [TournamentController::class, 'getParticipantsByDistrict']);
+    Route::get('{tournament_id}/participants-by-gender', [TournamentController::class, 'getParticipantsByGender']);
+    Route::get('{tournament_id}/get-tournament-income', [TournamentController::class, 'getTotalAmountByPaymentStatus']);
+    Route::get('{tournament_id}/get-total-income', [TournamentController::class, 'getTotalAmount']);
+    Route::get('{tournament_id}/contingents-join-by-date', [TournamentController::class, 'getContingentJoinByDate']);
+
+    //GET /api/tournament/{tournamentId}/contingents-join-by-date?start_date=2025-03-01&end_date=2025-03-05
 
     
     
@@ -151,8 +158,8 @@ Route::get('/download-document/{filename}', [DocumentController::class, 'downloa
 
 //Billings
 Route::middleware('auth:sanctum')->post('billings/add-member', [BillingController::class, 'addMember']);
-Route::middleware('auth:sanctum')->put('/billings/{paymentId}/update-document', [BillingController::class, 'updateDocument']);
-Route::middleware('auth:sanctum')->put('/billings/{paymentId}/confirm-payment', [BillingController::class, 'confirmPayment']);
+Route::middleware('auth:sanctum')->post('/billings/{paymentId}/update-document', [BillingController::class, 'updateDocument']);
+Route::middleware('auth:sanctum')->post('/billings/{paymentId}/confirm-payment', [BillingController::class, 'confirmPayment']);
 Route::middleware('auth:sanctum')->apiResource('billings', BillingController::class);
 
 //countries
@@ -172,7 +179,18 @@ Route::apiResource('match-categories', MatchCategoryController::class);
 
 //Drawings
 Route::get('show-bracket/{tournamentId}/{matchCategoryId}/{ageCategoryId}', [DrawingController::class, 'generateBracket']);
+Route::post('create-pools', [DrawingController::class, 'generatePools']);
+Route::get('pools', [DrawingController::class, 'getPools']);
+Route::get('pools/{poolId}/match-list', [DrawingController::class, 'getMatchList']);
 Route::apiResource('drawings', DrawingController::class);
+
+//Generate Match
+Route::get('/pools/{poolId}/generate-bracket', [TournamentMatchController::class, 'generateBracket']);
+Route::get('/pools/{poolId}/regenerate-bracket', [TournamentMatchController::class, 'regenerateBracket']);
+Route::get('/pools/{poolId}/matches', [TournamentMatchController::class, 'getMatches']);
+Route::get('/dummy/{poolId}/matches', [TournamentMatchController::class, 'dummy']);
+
+
 
 //Auth
 Route::post('/register', [AuthController::class, 'register']);

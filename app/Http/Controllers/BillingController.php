@@ -6,7 +6,12 @@ use Illuminate\Http\Request;
 use App\Models\Billing;
 use App\Models\BillingDetail;
 use App\Models\TeamMember;
+use App\Models\TournamentParticipant;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Intervention\Image\ImageManager;
+use Intervention\Image\Drivers\Gd\Driver; // Gunakan GD Driver
+
 
 class BillingController extends Controller
 {
@@ -239,26 +244,54 @@ class BillingController extends Controller
 
     public function updateDocument(Request $request, $paymentId)
     {
-        $user = auth()->user();
-
-        // Validasi agar hanya menerima URL
-        $request->validate([
-            'payment_document' => 'required|url',
-        ], [
-            'payment_document.url' => 'The payment document must be a valid URL.',
-        ]);
-
         try {
-            // Simpan ke database
             $billing = Billing::findOrFail($paymentId);
+
+            // Validasi file input
+            $validatedData = $request->validate([
+                'payment_document' => 'required|image|max:8192', // Maksimal 8MB
+            ]);
+
+            // Pastikan direktori penyimpanan ada
+            $directory = 'public/uploads/payment_documents';
+            if (!Storage::exists($directory)) {
+                Storage::makeDirectory($directory);
+            }
+
+            // Ambil file
+            $file = $request->file('payment_document');
+            $filename = time() . '.' . $file->getClientOriginalExtension();
+            $path = "uploads/payment_documents/{$filename}";
+
+            // Resize menggunakan ImageManager v3
+            $manager = new ImageManager(new Driver()); // ✅ Gunakan Driver langsung
+            $resizedImage = $manager->read($file)->scale(width: 400)->encode(); // ✅ Resize dengan cara baru
+
+            // Simpan ke storage publik
+            Storage::disk('public')->put($path, $resizedImage);
+
+            // Generate URL file
+            $fileUrl = asset("storage/{$path}");
+
+            // Update data billing
             $billing->status = 'waiting for confirmation';
-            $billing->payment_document = $request->input('payment_document');
+            $billing->payment_document = $fileUrl;
             $billing->save();
 
-            return response()->json(['message' => 'Document updated successfully.'], 200);
-
+            return response()->json([
+                'message' => 'Document updated successfully.',
+                'file_url' => $fileUrl
+            ], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
+            return response()->json([
+                'message' => 'Something went wrong.',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -269,6 +302,7 @@ class BillingController extends Controller
         // Validate input
         $request->validate([
             'status' => 'required|in:paid,failed',
+            'reject_reason' => 'required_if:status,failed|string|max:255', // Wajib diisi jika status 'failed'
         ]);
 
         try {
@@ -279,20 +313,24 @@ class BillingController extends Controller
             $billing->status = $request->input('status');
             $billing->save();
 
-            // If payment is approved (paid), update related TeamMembers
+            // If payment is approved (paid), insert the team member data to the tournament participants
             if ($billing->status === 'paid') {
                 // Assuming billing has a relationship with billing_details
                 $billingDetails = BillingDetail::where('billing_id', $billing->id)->get();
 
-                // Iterate through billing details to get associated team members and update their status
+                // Iterate through billing details to insert the data to tournament participants
                 foreach ($billingDetails as $billingDetail) {
-                    $teamMember = TeamMember::find($billingDetail->team_member_id);
+                    TournamentParticipant::create([
+                        'tournament_id' => $billing->tournament_id,
+                        'team_member_id' => $billingDetail->team_member_id
+                    ]);
+                    /*teamMember = TeamMember::find($billingDetail->team_member_id);
 
                     if ($teamMember) {
                         // Update team member's status to 'approved'
                         $teamMember->registration_status = 'approved';
                         $teamMember->save();
-                    }
+                    }*/
                 }
             }
 

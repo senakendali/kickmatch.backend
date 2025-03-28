@@ -12,6 +12,7 @@ use App\Models\MatchCategory;
 use App\Models\TournamentContingent;
 use App\Models\Contingent;
 use App\Models\TeamMember;
+use App\Models\Billing;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -511,6 +512,100 @@ class TournamentController extends Controller
 
         return response()->json($participants);
     }
+
+    public function getParticipantsByGender($tournamentId)
+    {
+        $participants = TeamMember::whereHas('contingent.tournamentContingents', function ($query) use ($tournamentId) {
+                $query->where('tournament_id', $tournamentId);
+            })
+            ->select('gender', \DB::raw('COUNT(*) as total_participants'))
+            ->groupBy('gender')
+            ->get()
+            ->map(function ($participant) {
+                return [
+                    'gender' => $participant->gender,
+                    'total_participants' => $participant->total_participants,
+                ];
+            });
+
+        return response()->json($participants);
+    }
+
+    public function getTotalAmountByPaymentStatus($tournamentId)
+    {
+        $result = Billing::where('tournament_id', $tournamentId) // Filter berdasarkan tournament_id
+            ->select('status', \DB::raw('SUM(amount) as total_amount'))
+            ->whereIn('status', ['paid', 'waiting for payment']) // Hanya status yang kita butuhkan
+            ->groupBy('status')
+            ->get()
+            ->map(function ($billing) {
+                return [
+                    'description' => ($billing->status === 'paid' ? 'Sudah Bayar' : 'Belum Bayar'), // Menggunakan status sebagai deskripsi
+                    'amount' => $billing->total_amount, // Menjumlahkan amount berdasarkan status
+                ];
+            });
+
+        return response()->json($result);
+    }
+
+    public function getTotalAmount($tournamentId)
+    {
+        // Debugging: Cek apakah ada data yang memenuhi kriteria
+        $billings = Billing::where('tournament_id', $tournamentId)
+            ->whereIn('status', ['paid', 'waiting for payment'])
+            ->get();
+
+        // Jika tidak ada data, kembalikan pesan dalam bentuk array
+        if ($billings->isEmpty()) {
+            return response()->json([
+                [
+                    'message' => 'No data found for the given tournament ID and statuses.',
+                    'total_amount' => 0,
+                ]
+            ]);
+        }
+
+        // Jumlahkan semua amount dari status 'paid' dan 'waiting for payment'
+        $totalAmount = $billings->sum('amount');
+
+        // Format jumlah total amount
+        $formattedTotalAmount = $totalAmount;
+
+        // Kembalikan response JSON dalam bentuk array
+        return response()->json([
+            [
+                'description' => 'Total Uang Diterima',
+                'total_amount' => $formattedTotalAmount,
+            ]
+        ]);
+    }
+
+    public function getContingentJoinByDate(Request $request, $tournamentId)
+    {
+        // Query awal
+        $query = TournamentContingent::where('tournament_id', $tournamentId)
+            ->select(\DB::raw('DATE(created_at) as join_date'), \DB::raw('COUNT(*) as total_contingents'))
+            ->groupBy('join_date')
+            ->orderBy('join_date', 'asc');
+
+        // Filter berdasarkan tanggal jika ada parameter `start_date` dan `end_date`
+        if ($request->has('start_date') && $request->has('end_date')) {
+            $query->whereBetween('created_at', [$request->start_date, $request->end_date]);
+        }
+
+        // Eksekusi query dan format hasilnya
+        $contingentsByDate = $query->get()->map(function ($item) {
+            return [
+                'join_date' => Carbon::parse($item->join_date)->translatedFormat('d F Y'),
+                'total_contingents' => $item->total_contingents,
+            ];
+        });
+
+        return response()->json($contingentsByDate);
+    }
+
+
+   
 
 
 

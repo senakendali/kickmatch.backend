@@ -24,4 +24,9 @@ class MatchCategory extends Model
     {
         return $this->hasMany(TeamMember::class);
     }
+
+    public function pools()
+    {
+        return $this->hasMany(Pool::class);
+    }
 }

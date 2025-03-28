@@ -24,4 +24,9 @@ class AgeCategory extends Model
     {
         return $this->hasMany(MatchClasification::class);
     }
+
+    public function pools()
+    {
+        return $this->hasMany(Pool::class);
+    }
 }

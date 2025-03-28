@@ -64,6 +64,27 @@ class TeamMember extends Model
     {
         return $this->hasMany(BillingDetail::class);
     }
+
+    public function tournamentParticipants()
+    {
+        return $this->hasMany(TournamentParticipant::class);
+    }
+
+    public function matchesAsParticipantOne()
+    {
+        return $this->hasMany(TournamentMatch::class, 'participant_1');
+    }
+
+    public function matchesAsParticipantTwo()
+    {
+        return $this->hasMany(TournamentMatch::class, 'participant_2');
+    }
+
+    public function matchesAsWinner()
+    {
+        return $this->hasMany(TournamentMatch::class, 'winner_id');
+    }
+
     
 }
 

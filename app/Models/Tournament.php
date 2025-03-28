@@ -45,5 +45,15 @@ class Tournament extends Model
         return $this->hasMany(ChampionshipCategory::class);
     }
 
+    public function participants()
+    {
+        return $this->hasMany(TournamentParticipant::class);
+    }
+
+    public function pools()
+    {
+        return $this->hasMany(Pool::class);
+    }
+
    
 }

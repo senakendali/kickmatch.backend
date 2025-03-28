@@ -2,41 +2,51 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class TournamentMatch extends Model
 {
-    protected $table = 'tournament_matches';
-    protected $guarded = ['created_at', 'updated_at'];
-    protected $dates = ['created_at', 'updated_at'];
+    use HasFactory;
 
-    public function tournament()
+    protected $fillable = [
+        'pool_id',
+        'round',
+        'match_number',
+        'participant_1',
+        'participant_2',
+        'winner_id',
+        'next_match_id'
+    ];
+
+    // Relasi ke Pool
+    public function pool()
     {
-        return $this->belongsTo(Tournament::class);
+        return $this->belongsTo(Pool::class);
     }
 
-    public function matchCategory()
+    // Relasi ke Peserta 1
+    public function participantOne()
     {
-        return $this->belongsTo(MatchCategory::class);
+        return $this->belongsTo(TeamMember::class, 'participant_1');
     }
 
-    public function ageCategory()
+    // Relasi ke Peserta 2
+    public function participantTwo()
     {
-        return $this->belongsTo(AgeCategory::class);
+        return $this->belongsTo(TeamMember::class, 'participant_2');
     }
 
-    public function participant1()
-    {
-        return $this->belongsTo(TeamMember::class, 'team_member_1_id');
-    }
-
-    public function participant2()
-    {
-        return $this->belongsTo(TeamMember::class, 'team_member_2_id');
-    }
-
+    // Relasi ke Pemenang
     public function winner()
     {
         return $this->belongsTo(TeamMember::class, 'winner_id');
     }
+
+    // Relasi ke Pertandingan Selanjutnya
+    public function nextMatch()
+    {
+        return $this->belongsTo(TournamentMatch::class, 'next_match_id');
+    }
 }
+
