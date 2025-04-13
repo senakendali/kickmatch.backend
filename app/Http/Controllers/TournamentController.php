@@ -45,12 +45,14 @@ class TournamentController extends Controller
     {
         try {
             $gallery = Tournament::orderBy('id', 'desc')->get()->map(function ($tournament) {
+                $document = $tournament->document ? asset('storage/' . $tournament->document) : null;
+                $image = $tournament->image ? asset('storage/' . $tournament->image) : null;
                 return [
                     'id'       => $tournament->id,
                     'name'     => $tournament->name,
                     'slug'     => $tournament->slug,
-                    'document' => $tournament->document,
-                    'image'    => asset('banner/' . $tournament->image),
+                    'document' => $document,
+                    'image'    => $image,
                     'status'   => $tournament->status,
                 ];
             });
@@ -169,6 +171,9 @@ class TournamentController extends Controller
                 'tournamentAgeCategories.ageCategory',
             ])->findOrFail($detail->id);
 
+            $document = $tournament->document ? asset('storage/' . $tournament->document) : null;
+            $image = $tournament->image ? asset('storage/' . $tournament->image) : null;
+
             // Transform the data into a structured format
             $data = [
                 'id' => $tournament->id,
@@ -178,7 +183,7 @@ class TournamentController extends Controller
                 'start_date' => $tournament->start_date,
                 'end_date' => $tournament->end_date,
                 'status' => $tournament->status,
-                'image' => asset('banner/' . $tournament->image),
+                'image' => $image,
                 'document' => $tournament->document,
                 'location' => $tournament->location,
                 'technical_meeting_date' => $tournament->technical_meeting_date,

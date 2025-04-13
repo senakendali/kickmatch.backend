@@ -26,6 +26,8 @@ use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\DrawingController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\TournamentMatchController;
+use App\Http\Controllers\TournamentSettingController;
+use App\Http\Controllers\TournamentActivityController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', function () {
@@ -154,7 +156,7 @@ Route::middleware('auth:sanctum')->apiResource('contingents', ContingentControll
 Route::middleware('auth:sanctum')->apiResource('team-members', TeamMemberController::class);
 
 //Documents
-Route::get('/download-document/{filename}', [DocumentController::class, 'download']);
+Route::get('/download-document', [DocumentController::class, 'download']);
 
 //Billings
 Route::middleware('auth:sanctum')->post('billings/add-member', [BillingController::class, 'addMember']);
@@ -190,7 +192,15 @@ Route::get('/pools/{poolId}/regenerate-bracket', [TournamentMatchController::cla
 Route::get('/pools/{poolId}/matches', [TournamentMatchController::class, 'getMatches']);
 Route::get('/dummy/{poolId}/matches', [TournamentMatchController::class, 'dummy']);
 
+// Tournament Settings
+Route::get('/tournament-settings', [TournamentSettingController::class, 'index']);
+Route::post('/tournament-settings', [TournamentSettingController::class, 'store']);
+Route::get('/tournament-settings/{tournament_setting}', [TournamentSettingController::class, 'show']);
+Route::post('/tournament-settings/update/{tournament_setting}', [TournamentSettingController::class, 'update']);
+Route::delete('/tournament-settings/{tournament_setting}', [TournamentSettingController::class, 'destroy']);
 
+// Tournament Activity
+Route::apiResource('tournament-activities', TournamentActivityController::class);
 
 //Auth
 Route::post('/register', [AuthController::class, 'register']);
