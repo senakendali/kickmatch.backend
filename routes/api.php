@@ -29,6 +29,7 @@ use App\Http\Controllers\TournamentMatchController;
 use App\Http\Controllers\TournamentSettingController;
 use App\Http\Controllers\TournamentActivityController;
 use App\Http\Controllers\TournamentMatchCategoryController;
+use App\Http\Controllers\TournamentArenaController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', function () {
@@ -206,6 +207,9 @@ Route::apiResource('tournament-activities', TournamentActivityController::class)
 
 // Tournament Category
 Route::apiResource('tournament-match-categories', TournamentMatchCategoryController::class);
+
+// Tournament Arena
+Route::apiResource('tournament-arenas', TournamentArenaController::class);
 
 //Auth
 Route::post('/register', [AuthController::class, 'register']);
