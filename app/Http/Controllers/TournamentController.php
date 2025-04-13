@@ -77,6 +77,15 @@ class TournamentController extends Controller
         }
     }
 
+    function getAllTournament(){
+        try {
+            $allTournament = Tournament::all();
+            return response()->json($allTournament, 200);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'An error occurred', 'message' => $e->getMessage()], 500);
+        }
+    }
+
     public function getHighlightedTournament()
     {
         try {

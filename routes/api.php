@@ -28,6 +28,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\TournamentMatchController;
 use App\Http\Controllers\TournamentSettingController;
 use App\Http\Controllers\TournamentActivityController;
+use App\Http\Controllers\TournamentMatchCategoryController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', function () {
@@ -105,6 +106,7 @@ Route::prefix('tournaments')->group(function () {
     Route::get('gallery', [TournamentController::class, 'getTournamentGallery']);
     Route::get('highlight', [TournamentController::class, 'getHighlightedTournament']);
     Route::get('active', [TournamentController::class, 'getActiveTournament']);
+    Route::get('all', [TournamentController::class, 'getAllTournament']);
     Route::get('detail/{slug}', [TournamentController::class, 'getTournamentDetail']); 
     Route::get('{id}', [TournamentController::class, 'show']);
     Route::get('{tournament_id}/stats', [TournamentController::class, 'getTournamentStats']);
@@ -201,6 +203,9 @@ Route::delete('/tournament-settings/{tournament_setting}', [TournamentSettingCon
 
 // Tournament Activity
 Route::apiResource('tournament-activities', TournamentActivityController::class);
+
+// Tournament Category
+Route::apiResource('tournament-match-categories', TournamentMatchCategoryController::class);
 
 //Auth
 Route::post('/register', [AuthController::class, 'register']);
