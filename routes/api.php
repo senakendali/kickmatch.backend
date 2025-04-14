@@ -31,6 +31,7 @@ use App\Http\Controllers\TournamentActivityController;
 use App\Http\Controllers\TournamentMatchCategoryController;
 use App\Http\Controllers\TournamentArenaController;
 use App\Http\Controllers\TournamentContactPersonController;
+use App\Http\Controllers\MatchScheduleController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', function () {
@@ -195,6 +196,10 @@ Route::get('/pools/{poolId}/generate-bracket', [TournamentMatchController::class
 Route::get('/pools/{poolId}/regenerate-bracket', [TournamentMatchController::class, 'regenerateBracket']);
 Route::get('/pools/{poolId}/matches', [TournamentMatchController::class, 'getMatches']);
 Route::get('/dummy/{poolId}/matches', [TournamentMatchController::class, 'dummy']);
+Route::get('/tournaments/{tournamentId}/matches', [TournamentMatchController::class, 'listMatches']);
+Route::get('/match-schedules/{tournamentId}/matches', [TournamentMatchController::class, 'allMatches']);
+
+
 
 // Tournament Settings
 Route::get('/tournament-settings', [TournamentSettingController::class, 'index']);
@@ -212,8 +217,15 @@ Route::apiResource('tournament-match-categories', TournamentMatchCategoryControl
 // Tournament Arena
 Route::apiResource('tournament-arenas', TournamentArenaController::class);
 
+// Tournament Arena by Tournament
+Route::get('/tournaments/{id}/arenas', [TournamentArenaController::class, 'getByTournament']);
+
+
 // Tournament Contact Person
 Route::apiResource('tournament-contact-persons', TournamentContactPersonController::class);
+
+// Tournament Schedule
+Route::apiResource('match-schedules', MatchScheduleController::class);
 
 //Auth
 Route::post('/register', [AuthController::class, 'register']);

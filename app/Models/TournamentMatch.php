@@ -48,5 +48,12 @@ class TournamentMatch extends Model
     {
         return $this->belongsTo(TournamentMatch::class, 'next_match_id');
     }
+
+    
+    public function scheduleDetails()
+    {
+        return $this->hasMany(MatchScheduleDetail::class);
+    }
+
 }
 

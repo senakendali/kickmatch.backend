@@ -17,6 +17,27 @@ class TournamentArenaController extends Controller
         }
     }
 
+    public function getByTournament($tournamentId)
+    {
+        try {
+            $arenas = TournamentArena::where('tournament_id', $tournamentId)
+                        ->with('tournament')
+                        ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $arenas
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to fetch arenas',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
     public function show($id)
     {
         try {

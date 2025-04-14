@@ -14,5 +14,10 @@ class TournamentArena extends Model
     {
         return $this->belongsTo(Tournament::class);
     } 
+
+    public function schedules()
+    {
+        return $this->hasMany(MatchSchedule::class, 'tournament_arena_id');
+    }
     
 }

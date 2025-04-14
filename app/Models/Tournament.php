@@ -60,5 +60,10 @@ class Tournament extends Model
         return $this->hasMany(TournamentArena::class);
     }
 
+    public function schedules()
+    {
+        return $this->hasMany(MatchSchedule::class);
+    }
+
    
 }

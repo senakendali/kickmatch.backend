@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use App\Models\Pool;
 use App\Models\TournamentMatch;
 use App\Models\TournamentParticipant;
+use App\Models\MatchSchedule;
+use App\Models\MatchScheduleDetail;
 use Illuminate\Support\Facades\DB;
 
 class TournamentMatchController extends Controller
@@ -494,10 +496,52 @@ class TournamentMatchController extends Controller
         ]);
     }
 
+    
 
+    public function listMatches(Request $request, $tournamentId)
+    {
+        $query = TournamentMatch::with([
+                'participantOne:id,name,contingent_id',
+                'participantOne.contingent:id,name',
+                'participantTwo:id,name,contingent_id',
+                'participantTwo.contingent:id,name',
+                'winner:id,name,contingent_id',
+                'winner.contingent:id,name',
+                'pool:id,name,tournament_id'
+            ])
+            ->whereHas('pool', function ($q) use ($tournamentId) {
+                $q->where('tournament_id', $tournamentId);
+            })
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('match_schedule_details')
+                    ->whereColumn('match_schedule_details.tournament_match_id', 'tournament_matches.id');
+            });
 
+        // Optional filters (keep existing)
+        if ($request->has('match_category_id')) {
+            $query->where('match_category_id', $request->match_category_id);
+        }
 
+        if ($request->has('age_category_id')) {
+            $query->where('age_category_id', $request->age_category_id);
+        }
 
+        if ($request->has('category_class_id')) {
+            $query->where('category_class_id', $request->category_class_id);
+        }
+
+        if ($request->has('pool_id')) {
+            $query->where('pool_id', $request->pool_id);
+        }
+
+        $matches = $query->orderBy('round')->orderBy('match_number')->get();
+
+        return response()->json([
+            'message' => 'List pertandingan berhasil diambil (excluding already scheduled matches).',
+            'data' => $matches
+        ]);
+    }
 
     private function addNextRounds($bracket, $winners)
     {
@@ -527,6 +571,62 @@ class TournamentMatchController extends Controller
 
         return $bracket;
     }
+
+    public function allMatches(Request $request, $scheduleId)
+    {
+        $schedule = MatchSchedule::findOrFail($scheduleId);
+
+        $tournamentId = $schedule->tournament_id;
+
+        // Match yang sudah dijadwalkan dalam schedule ini
+        $scheduledMatches = MatchScheduleDetail::where('match_schedule_id', $scheduleId)
+            ->pluck('tournament_match_id')
+            ->toArray();
+
+        // Ambil semua match (baik yang sudah dijadwalkan di jadwal ini maupun yang belum pernah dijadwalkan)
+        $query = TournamentMatch::with([
+                'participantOne:id,name,contingent_id',
+                'participantOne.contingent:id,name',
+                'participantTwo:id,name,contingent_id',
+                'participantTwo.contingent:id,name',
+                'winner:id,name,contingent_id',
+                'winner.contingent:id,name',
+                'pool:id,name,tournament_id'
+            ])
+            ->whereHas('pool', function ($q) use ($tournamentId) {
+                $q->where('tournament_id', $tournamentId);
+            })
+            ->where(function ($q) use ($scheduledMatches) {
+                $q->whereIn('id', $scheduledMatches) // match yang udah dijadwalkan di jadwal ini
+                ->orWhereNotExists(function ($sub) {
+                    $sub->select(DB::raw(1))
+                        ->from('match_schedule_details')
+                        ->whereColumn('match_schedule_details.tournament_match_id', 'tournament_matches.id');
+                });
+            });
+
+        // Optional filters
+        if ($request->has('match_category_id')) {
+            $query->where('match_category_id', $request->match_category_id);
+        }
+        if ($request->has('age_category_id')) {
+            $query->where('age_category_id', $request->age_category_id);
+        }
+        if ($request->has('category_class_id')) {
+            $query->where('category_class_id', $request->category_class_id);
+        }
+        if ($request->has('pool_id')) {
+            $query->where('pool_id', $request->pool_id);
+        }
+
+        $matches = $query->orderBy('round')->orderBy('match_number')->get();
+
+        return response()->json([
+            'message' => 'List pertandingan berhasil diambil (yang belum dijadwalkan + sudah ada di schedule ini).',
+            'data' => $matches
+        ]);
+    }
+
 
     private function formatBracketForVue($bracket)
     {
