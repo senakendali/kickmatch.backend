@@ -1,6 +1,12 @@
 <?php
 
 return [
+
+    'paths' => [
+        'api/*',        // untuk route api biasa
+        'sync/*',       // tambahkan ini supaya /sync/matches bisa kena CORS
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Allowed CORS Origins
@@ -13,6 +19,7 @@ return [
     'allowed_origins' => [
         'http://localhost:8080',  // Frontend app URL (replace with the correct URL)
         'https://cjmanajemen.co.id',  // Additional frontend app URL
+        'http://192.168.1.11:8000',
         // Add more allowed origins here
     ],
 
@@ -44,6 +51,8 @@ return [
         'Content-Type',
         'Authorization',
         'X-Requested-With',
+        'X-CSRF-TOKEN',
+        'X-Socket-Id',
     ],
 
     /*

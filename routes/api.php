@@ -32,6 +32,7 @@ use App\Http\Controllers\TournamentMatchCategoryController;
 use App\Http\Controllers\TournamentArenaController;
 use App\Http\Controllers\TournamentContactPersonController;
 use App\Http\Controllers\MatchScheduleController;
+use App\Http\Controllers\SyncController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', function () {
@@ -102,7 +103,9 @@ Route::middleware('auth:sanctum')->get('/menus', [MenuController::class, 'index'
 
 Route::prefix('tournaments')->group(function () {
     // Resource route for CRUD operations
-    Route::apiResource('', TournamentController::class);
+    //Route::apiResource('', TournamentController::class);
+    Route::middleware('auth:sanctum')->get('/', [TournamentController::class, 'index']);
+    Route::apiResource('', TournamentController::class)->except(['index']);
 
     // Custom route
     Route::middleware('auth:sanctum')->post('register', [TournamentController::class, 'contingentRegistration']);
@@ -198,6 +201,7 @@ Route::get('/pools/{poolId}/matches', [TournamentMatchController::class, 'getMat
 Route::get('/dummy/{poolId}/matches', [TournamentMatchController::class, 'dummy']);
 Route::get('/tournaments/{tournamentId}/matches', [TournamentMatchController::class, 'listMatches']);
 Route::get('/match-schedules/{tournamentId}/matches', [TournamentMatchController::class, 'allMatches']);
+Route::get('/tournaments/{tournamentId}/available-rounds', [TournamentMatchController::class, 'getAvailableRounds']);
 
 
 
@@ -225,6 +229,7 @@ Route::get('/tournaments/{id}/arenas', [TournamentArenaController::class, 'getBy
 Route::apiResource('tournament-contact-persons', TournamentContactPersonController::class);
 
 // Tournament Schedule
+Route::get('/tournaments/{id}/match-schedules', [MatchScheduleController::class, 'getSchedules']);
 Route::apiResource('match-schedules', MatchScheduleController::class);
 
 //Auth
@@ -233,6 +238,19 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
 
 Route::get('/users/count', [UserController::class, 'countUsersWithRole']);
+
+Route::get('/sync/matches', [SyncController::class, 'matches']);
+Route::post('/login', [AuthController::class, 'login']);
+
+// Catch-all OPTIONS request untuk preflight
+Route::options('/{any}', function () {
+    return response()->json([], 204);
+})->where('any', '.*');
+
+
+
+
+
 
 //Export
 

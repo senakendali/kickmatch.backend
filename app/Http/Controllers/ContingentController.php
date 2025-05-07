@@ -14,6 +14,46 @@ class ContingentController extends Controller
     {
         try {
             $user = auth()->user();
+            $search = $request->input('search', '');
+
+            $query = Contingent::query();
+
+            // Search
+            if ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', '%' . $search . '%')
+                    ->orWhere('pic_name', 'like', '%' . $search . '%')
+                    ->orWhere('pic_email', 'like', '%' . $search . '%')
+                    ->orWhere('pic_phone', 'like', '%' . $search . '%');
+                });
+            }
+
+            // Filter akses berdasarkan group
+            if ($user->group && $user->group->name === 'Owner') {
+                // Owner lihat semua
+            } elseif ($user->group && $user->group->name === 'Event PIC') {
+                // Admin hanya lihat kontingen yang berelasi dengan tournament dia, lewat pivot
+                $query->whereHas('tournamentContingents', function ($q) use ($user) {
+                    $q->where('tournament_id', $user->tournament_id);
+                });
+            } else {
+                // User biasa hanya kontingen miliknya
+                $query->where('owner_id', $user->id);
+            }
+
+            $contingents = $query->withCount('teamMembers')->paginate(10);
+
+            return response()->json($contingents);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+
+    public function index_(Request $request)
+    {
+        try {
+            $user = auth()->user();
             $search = $request->input('search', ''); // Mendapatkan parameter search dari request
 
             $query = Contingent::query();

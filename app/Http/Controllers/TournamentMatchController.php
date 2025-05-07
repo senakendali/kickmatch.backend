@@ -111,282 +111,321 @@ class TournamentMatchController extends Controller
     private function generateSingleRoundBracket($poolId, $participants)
     {
         TournamentMatch::where('pool_id', $poolId)->delete();
-        
-        $matches = collect();
+
+        $participantIds = $participants->pluck('id')->toArray();
+        $totalParticipants = count($participantIds);
+
+        $bracketSize = pow(2, ceil(log($totalParticipants, 2)));
+        $totalRounds = log($bracketSize, 2);
         $matchNumber = 1;
-        $totalParticipants = count($participants);
 
-        for ($i = 0; $i < $totalParticipants - 1; $i += 2) {
+        $matches = collect();
+
+        // Buat satu babak saja (round 1)
+        for ($i = 0; $i < $bracketSize / 2; $i++) {
+            $participant1 = $participantIds[$i * 2] ?? null;
+            $participant2 = $participantIds[$i * 2 + 1] ?? null;
+
             $matches->push([
                 'pool_id' => $poolId,
                 'round' => 1,
                 'match_number' => $matchNumber++,
-                'participant_1' => $participants[$i]->id,
-                'participant_2' => $participants[$i + 1]->id,
-                'winner_id' => null,
+                'participant_1' => $participant1,
+                'participant_2' => $participant2,
+                'winner_id' => $participant2 === null ? $participant1 : null,
+                'next_match_id' => null,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
         }
 
-        // Jika jumlah peserta ganjil, peserta terakhir mendapat bye
-        if ($totalParticipants % 2 == 1) {
-            $matches->push([
-                'pool_id' => $poolId,
-                'round' => 1,
-                'match_number' => $matchNumber++,
-                'participant_1' => $participants[$totalParticipants - 1]->id,
-                'participant_2' => null,
-                'winner_id' => $participants[$totalParticipants - 1]->id,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
-        
         TournamentMatch::insert($matches->toArray());
-        
-        return response()->json(['message' => 'Bracket single round berhasil dibuat.', 'matches' => $matches]);
+
+        $insertedMatches = TournamentMatch::where('pool_id', $poolId)->orderBy('match_number')->get();
+
+        return response()->json([
+            'message' => 'Bracket single round berhasil dibuat (struktur lengkap).',
+            'matches' => $insertedMatches,
+        ]);
     }
 
     private function generateBracketForSix($poolId, $participants)
-    {
-        TournamentMatch::where('pool_id', $poolId)->delete();
-        
-        $matches = collect();
-        $matchNumber = 1;
+{
+    TournamentMatch::where('pool_id', $poolId)->delete();
+    
+    $matches = collect();
+    $matchNumber = 1;
 
-        // Babak pertama: 4 pertandingan
-        // Match 1 (Peserta 1 bye - langsung menang)
-        $matches->push([
-            'pool_id' => $poolId,
-            'round' => 1,
-            'match_number' => $matchNumber++,
-            'participant_1' => $participants[0]->id,
-            'participant_2' => null, // Bye
-            'winner_id' => $participants[0]->id, // Menang otomatis
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+    // Babak pertama: 4 pertandingan
+    // Match 1 (Peserta 1 bye - langsung menang)
+    $match1Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 1,
+        'match_number' => $matchNumber++,
+        'participant_1' => $participants[0]->id,
+        'participant_2' => null, // Bye
+        'winner_id' => $participants[0]->id, // Menang otomatis
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 
-        // Match 2 (Peserta 2 vs Peserta 3)
-        $matches->push([
-            'pool_id' => $poolId,
-            'round' => 1,
-            'match_number' => $matchNumber++,
-            'participant_1' => $participants[1]->id,
-            'participant_2' => $participants[2]->id,
-            'winner_id' => null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+    // Match 2 (Peserta 2 vs Peserta 3)
+    $match2Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 1,
+        'match_number' => $matchNumber++,
+        'participant_1' => $participants[1]->id,
+        'participant_2' => $participants[2]->id,
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 
-        // Match 3 (Peserta 4 vs Peserta 5)
-        $matches->push([
-            'pool_id' => $poolId,
-            'round' => 1,
-            'match_number' => $matchNumber++,
-            'participant_1' => $participants[3]->id,
-            'participant_2' => $participants[4]->id,
-            'winner_id' => null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+    // Match 3 (Peserta 4 vs Peserta 5)
+    $match3Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 1,
+        'match_number' => $matchNumber++,
+        'participant_1' => $participants[3]->id,
+        'participant_2' => $participants[4]->id,
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 
-        // Match 4 (Peserta 6 bye - langsung menang)
-        $matches->push([
-            'pool_id' => $poolId,
-            'round' => 1,
-            'match_number' => $matchNumber++,
-            'participant_1' => $participants[5]->id,
-            'participant_2' => null, // Bye
-            'winner_id' => $participants[5]->id, // Menang otomatis
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+    // Match 4 (Peserta 6 bye - langsung menang)
+    $match4Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 1,
+        'match_number' => $matchNumber++,
+        'participant_1' => $participants[5]->id,
+        'participant_2' => null, // Bye
+        'winner_id' => $participants[5]->id, // Menang otomatis
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 
-        // Babak kedua: 2 pemenang dari babak pertama + peserta bye
-        // Match 5 (Pemenang Match 2 vs Peserta 1 yang bye di Match 1)
-        $matches->push([
-            'pool_id' => $poolId,
-            'round' => 2,
-            'match_number' => $matchNumber++,
-            'participant_1' => $participants[0]->id, // Peserta 1 yang menang bye
-            'participant_2' => null, // Akan diisi pemenang Match 2
-            'winner_id' => null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+    // Babak kedua: 2 pemenang dari babak pertama + peserta bye
+    // Match 5 (Pemenang Match 2 vs Peserta 1 yang bye di Match 1)
+    $match5Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 2,
+        'match_number' => $matchNumber++,
+        'participant_1' => $participants[0]->id, // Peserta 1 yang menang bye
+        'participant_2' => null, // Akan diisi pemenang Match 2
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 
-        // Match 6 (Pemenang Match 3 vs Peserta 6 yang bye di Match 4)
-        $matches->push([
-            'pool_id' => $poolId,
-            'round' => 2,
-            'match_number' => $matchNumber++,
-            'participant_1' => $participants[5]->id, // Peserta 6 yang menang bye
-            'participant_2' => null, // Akan diisi pemenang Match 3
-            'winner_id' => null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+    // Match 6 (Pemenang Match 3 vs Peserta 6 yang bye di Match 4)
+    $match6Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 2,
+        'match_number' => $matchNumber++,
+        'participant_1' => $participants[5]->id, // Peserta 6 yang menang bye
+        'participant_2' => null, // Akan diisi pemenang Match 3
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 
-        // Babak final: Pemenang Match 5 vs Pemenang Match 6
-        $matches->push([
-            'pool_id' => $poolId,
-            'round' => 3,
-            'match_number' => $matchNumber++,
-            'participant_1' => null, // Akan diisi pemenang Match 5
-            'participant_2' => null, // Akan diisi pemenang Match 6
-            'winner_id' => null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+    // Babak final: Pemenang Match 5 vs Pemenang Match 6
+    $match7Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 3,
+        'match_number' => $matchNumber++,
+        'participant_1' => null, // Akan diisi pemenang Match 5
+        'participant_2' => null, // Akan diisi pemenang Match 6
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 
-        TournamentMatch::insert($matches->toArray());
+    // Update next_match_id untuk linking antar pertandingan
+    DB::table('tournament_matches')->where('id', $match1Id)->update(['next_match_id' => $match5Id]);
+    DB::table('tournament_matches')->where('id', $match2Id)->update(['next_match_id' => $match5Id]);
+    DB::table('tournament_matches')->where('id', $match3Id)->update(['next_match_id' => $match6Id]);
+    DB::table('tournament_matches')->where('id', $match4Id)->update(['next_match_id' => $match6Id]);
 
-        return response()->json(['message' => 'Bracket untuk 6 peserta berhasil dibuat.', 'rounds' => $matches]);
-    }
+    DB::table('tournament_matches')->where('id', $match5Id)->update(['next_match_id' => $match7Id]);
+    DB::table('tournament_matches')->where('id', $match6Id)->update(['next_match_id' => $match7Id]);
+
+    // Ambil data yang sudah disimpan
+    $inserted = TournamentMatch::where('pool_id', $poolId)
+        ->orderBy('round')
+        ->orderBy('match_number')
+        ->get();
+
+    return response()->json([
+        'message' => 'Bracket untuk 6 peserta berhasil dibuat.',
+        'rounds' => $inserted,
+    ]);
+}
+
+
+
+    
+
+
+
+
 
 
     private function generateFullPrestasiBracket($poolId, $participants)
     {
         TournamentMatch::where('pool_id', $poolId)->delete();
-        
-        $matches = collect();
+    
+        $participantIds = $participants->pluck('id')->toArray();
+        $totalParticipants = count($participantIds);
+    
+        $bracketSize = pow(2, ceil(log($totalParticipants, 2)));
+        $totalRounds = log($bracketSize, 2);
         $matchNumber = 1;
-        $totalParticipants = count($participants);
-
-        // Cari jumlah peserta terdekat yang merupakan pangkat dua
-        $powerOfTwo = pow(2, ceil(log($totalParticipants, 2)));
-        $byes = $powerOfTwo - $totalParticipants; // Hitung jumlah bye jika jumlah peserta tidak ideal
-        
-        $round = 1;
-        $nextRoundParticipants = collect();
-        
-        // Babak pertama, tambahkan "bye" jika diperlukan
-        $index = 0;
-        while ($index < $totalParticipants - $byes) {
-            $matches->push([
-                'pool_id' => $poolId,
-                'round' => $round,
-                'match_number' => $matchNumber++,
-                'participant_1' => $participants[$index]->id,
-                'participant_2' => $participants[$index + 1]->id,
-                'winner_id' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            $nextRoundParticipants->push(null); // Slot untuk pemenang
-            $index += 2;
-        }
-
-        // Tambahkan peserta yang mendapat "bye" langsung ke babak berikutnya
-        for ($i = 0; $i < $byes; $i++) {
-            $nextRoundParticipants->push($participants[$index + $i]->id);
-        }
-
-        // Babak selanjutnya sampai final
-        while ($nextRoundParticipants->count() > 1) {
-            $round++;
-            $newRoundParticipants = collect();
-
-            for ($i = 0; $i < $nextRoundParticipants->count(); $i += 2) {
+    
+        $matches = collect();
+        $matchIdMap = [];
+    
+        // Buat semua struktur pertandingan kosong dulu (dengan round & match_number)
+        for ($round = 1; $round <= $totalRounds; $round++) {
+            $matchCount = $bracketSize / pow(2, $round);
+            for ($i = 0; $i < $matchCount; $i++) {
                 $matches->push([
                     'pool_id' => $poolId,
                     'round' => $round,
                     'match_number' => $matchNumber++,
-                    'participant_1' => $nextRoundParticipants[$i],
-                    'participant_2' => $nextRoundParticipants[$i + 1] ?? null, // Jika ganjil, bye otomatis masuk babak berikutnya
+                    'participant_1' => null,
+                    'participant_2' => null,
                     'winner_id' => null,
+                    'next_match_id' => null,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-                $newRoundParticipants->push(null); // Slot untuk pemenang
             }
-
-            $nextRoundParticipants = $newRoundParticipants;
         }
-
-        TournamentMatch::insert($matches->toArray());
-
+    
+        // Insert match kosong ke DB
+        DB::table('tournament_matches')->insert($matches->toArray());
+    
+        // Ambil kembali semua match yang baru saja disimpan
+        $allMatches = TournamentMatch::where('pool_id', $poolId)
+            ->orderBy('round')
+            ->orderBy('match_number')
+            ->get();
+    
+        // Kelompokkan berdasarkan babak
+        $byRound = $allMatches->groupBy('round');
+    
+        // Hubungkan next_match_id (struktur pohon)
+        foreach ($byRound as $round => $roundMatches) {
+            if (isset($byRound[$round + 1])) {
+                $nextMatches = $byRound[$round + 1];
+                foreach ($roundMatches as $i => $match) {
+                    $parentIndex = floor($i / 2);
+                    $match->next_match_id = $nextMatches[$parentIndex]->id ?? null;
+                    $match->save();
+                }
+            }
+        }
+    
+        // Assign peserta ke babak pertama
+        $firstRound = $byRound[1];
+        $i = 0;
+        foreach ($firstRound as $match) {
+            $match->participant_1 = $participantIds[$i++] ?? null;
+            $match->participant_2 = $participantIds[$i++] ?? null;
+    
+            // Jika hanya 1 peserta (bye), langsung menang
+            if ($match->participant_1 && !$match->participant_2) {
+                $match->winner_id = $match->participant_1;
+            }
+    
+            $match->save();
+        }
+    
         return response()->json([
-            'message' => 'Bracket full prestasi berhasil dibuat.',
-            'rounds' => $matches,
+            'message' => 'Bracket full prestasi berhasil dibuat (dengan struktur lengkap).',
+            'rounds' => $allMatches,
         ]);
     }
 
 
-
     private function generateSingleElimination($tournamentId, $poolId, $participants, $matchChart)
     {
-        $totalParticipants = $participants->count();
-        $numRounds = ceil(log($matchChart, 2));
-        $bracketSize = pow(2, $numRounds);
-        $numByes = $bracketSize - $totalParticipants;
-
-        // Hapus pertandingan lama di pool ini
         TournamentMatch::where('pool_id', $poolId)->delete();
 
         $matches = collect();
-        $index = 0;
+        $participantIds = $participants->pluck('id')->toArray();
+
+        $bracketSize = (int) $matchChart; // e.g. 4, 6, 8, 16
+        $totalRounds = (int) log($bracketSize, 2);
         $matchNumber = 1;
-
-        if ($matchChart == 6) {
-            // 4 peserta bertanding di babak pertama, 2 peserta mendapatkan bye
-            for ($i = 0; $i < 2; $i++) {
-                $participant1 = $participants[$index++] ?? null;
-                $participant2 = $participants[$index++] ?? null;
-
-                $matches->push([
+        $matchIdMap = [];
+        
+        // Generate all matches structure up front (with nulls)
+        $roundMatchCounts = [];
+        for ($round = 1; $round <= $totalRounds; $round++) {
+            $matchCount = $bracketSize / pow(2, $round);
+            $roundMatchCounts[$round] = $matchCount;
+            for ($i = 0; $i < $matchCount; $i++) {
+                $match = [
                     'pool_id' => $poolId,
-                    'round' => 1,
+                    'round' => $round,
                     'match_number' => $matchNumber++,
-                    'participant_1' => $participant1->id ?? null,
-                    'participant_2' => $participant2->id ?? null,
-                    'winner_id' => null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            }
-
-            // 2 peserta mendapatkan bye ke babak kedua
-            for ($i = 0; $i < 2; $i++) {
-                $participant1 = $participants[$index++] ?? null;
-
-                $matches->push([
-                    'pool_id' => $poolId,
-                    'round' => 2,
-                    'match_number' => $matchNumber++,
-                    'participant_1' => $participant1->id ?? null,
+                    'participant_1' => null,
                     'participant_2' => null,
-                    'winner_id' => $participant1->id ?? null,
+                    'winner_id' => null,
+                    'next_match_id' => null,
                     'created_at' => now(),
                     'updated_at' => now(),
-                ]);
-            }
-        } else {
-            // Default untuk bagan lainnya
-            for ($i = 0; $i < $bracketSize / 2; $i++) {
-                $participant1 = $participants[$index] ?? null;
-                $participant2 = ($i < $numByes) ? null : ($participants[++$index] ?? null);
-                $index++;
-
-                $matches->push([
-                    'pool_id' => $poolId,
-                    'round' => 1,
-                    'match_number' => $matchNumber++,
-                    'participant_1' => $participant1->id ?? null,
-                    'participant_2' => $participant2->id ?? null,
-                    'winner_id' => $participant2 === null ? $participant1->id : null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                ];
+                $matches->push($match);
             }
         }
 
-        TournamentMatch::insert($matches->toArray());
+        // Insert to DB and get IDs
+        $inserted = $matches->toArray();
+        DB::table('tournament_matches')->insert($inserted);
 
-        return response()->json(['message' => 'Bracket berhasil dibuat.', 'rounds' => $matches]);
+        // Fetch inserted matches with IDs
+        $allMatches = TournamentMatch::where('pool_id', $poolId)
+            ->orderBy('round')
+            ->orderBy('match_number')
+            ->get();
+
+        // Hubungkan match ke next_match_id
+        $byRound = $allMatches->groupBy('round');
+        foreach ($byRound as $round => $roundMatches) {
+            if (isset($byRound[$round + 1])) {
+                $nextMatches = $byRound[$round + 1];
+                foreach ($roundMatches as $i => $match) {
+                    $parentIndex = floor($i / 2);
+                    $match->next_match_id = $nextMatches[$parentIndex]->id ?? null;
+                    $match->save();
+                }
+            }
+        }
+
+        // Assign peserta ke match round 1
+        $firstRoundMatches = $byRound[1];
+        $index = 0;
+        foreach ($firstRoundMatches as $match) {
+            $match->participant_1 = $participantIds[$index++] ?? null;
+            $match->participant_2 = $participantIds[$index++] ?? null;
+
+            // Jika hanya 1 peserta (BYE), langsung menang otomatis
+            if ($match->participant_1 && !$match->participant_2) {
+                $match->winner_id = $match->participant_1;
+            }
+            $match->save();
+        }
+
+        return response()->json([
+            'message' => 'Bracket eliminasi tunggal berhasil dibuat.',
+            'rounds' => $allMatches,
+        ]);
     }
+
 
 
     public function dummy($poolId)
@@ -408,119 +447,128 @@ class TournamentMatchController extends Controller
 
     public function getMatches($poolId)
     {
-        // Ambil nilai match_chart dari tabel pools
         $pool = Pool::findOrFail($poolId);
-        $matchChart = (int) $pool->match_chart; // Jenis bagan (2, 4, 6, 8, 16)
-        
-        // Ambil semua pertandingan berdasarkan pool_id
+        $matchChart = (int) $pool->match_chart;
+
         $matches = TournamentMatch::where('pool_id', $poolId)
             ->with(['participantOne', 'participantTwo', 'winner'])
             ->orderBy('round')
+            ->orderBy('match_number')
             ->get();
 
         $groupedRounds = [];
-        $allGamesEmpty = true; // Flag untuk mengecek apakah semua games masih kosong
+        $allGamesEmpty = true;
 
-        // Tentukan jumlah total babak berdasarkan match_chart
-        $totalRounds = log($matchChart, 2);
-
-        // Inisialisasi babak sesuai dengan match_chart
-        for ($round = 1; $round <= $totalRounds; $round++) {
-            $groupedRounds[$round] = [
-                'games' => []
-            ];
-        }
-
-        // Kelompokkan pertandingan berdasarkan round
         foreach ($matches as $match) {
-            $round = $match->round; // Babak pertandingan
+            $round = $match->round;
 
             if (!isset($groupedRounds[$round])) {
-                $groupedRounds[$round] = [
-                    'games' => []
-                ];
+                $groupedRounds[$round] = ['games' => []];
             }
 
-            $gameData = [
-                'player1' => $match->participantOne ? [
-                    'id' => (string) $match->participantOne->id,
-                    'name' => $match->participantOne->name,
-                    'winner' => $match->winner && $match->winner->id == $match->participantOne->id
-                ] : ['id' => null, 'name' => 'TBD', 'winner' => false],
+            $player1 = $match->participantOne;
+            $player2 = $match->participantTwo;
+            $winner = $match->winner;
 
-                'player2' => $match->participantTwo ? [
-                    'id' => (string) $match->participantTwo->id,
-                    'name' => $match->participantTwo->name,
-                    'winner' => $match->winner && $match->winner->id == $match->participantTwo->id
-                ] : ['id' => null, 'name' => 'TBD', 'winner' => false],
+            /*$game = [
+                'player1' => $player1 ? [
+                    'id' => (string) $player1->id,
+                    'name' => $player1->name,
+                    'winner' => $winner && $winner->id === $player1->id
+                ] : [
+                    'id' => null,
+                    'name' => 'TBD',
+                    'winner' => false
+                ],
+                'player2' => $player2 ? [
+                    'id' => (string) $player2->id,
+                    'name' => $player2->name,
+                    'winner' => $winner && $winner->id === $player2->id
+                ] : [
+                    'id' => null,
+                    'name' => 'TBD',
+                    'winner' => false
+                ]
+            ];*/
+            $game = [
+                'player1' => $player1 ? [
+                    'id' => (string) $player1->id,
+                    'name' => $player1->name,
+                    'winner' => $winner && $winner->id === $player1->id
+                ] : [
+                    'id' => null,
+                    'name' => $round === 1 ? 'BYE' : 'TBD', // Jika babak 1, set "BYE"
+                    'winner' => false
+                ],
+                'player2' => $player2 ? [
+                    'id' => (string) $player2->id,
+                    'name' => $player2->name,
+                    'winner' => $winner && $winner->id === $player2->id
+                ] : [
+                    'id' => null,
+                    'name' => $round === 1 ? 'BYE' : 'TBD', // Jika babak 1, set "BYE"
+                    'winner' => false
+                ]
             ];
+            
 
-            // Jika setidaknya ada satu pertandingan yang memiliki data pemain, set flag ke false
-            if ($match->participantOne || $match->participantTwo) {
+            if ($player1 || $player2) {
                 $allGamesEmpty = false;
             }
 
-            $groupedRounds[$round]['games'][] = $gameData;
+            $groupedRounds[$round]['games'][] = $game;
         }
 
-        // Tambahkan game kosong (TBD) jika jumlah pertandingan belum cukup di babak tertentu
-        for ($round = 1; $round <= $totalRounds; $round++) {
-            $expectedGames = $matchChart / pow(2, $round); // Jumlah game di setiap babak
+        // Urutkan round secara numerik
+        ksort($groupedRounds);
 
-            while (count($groupedRounds[$round]['games']) < $expectedGames) {
-                $groupedRounds[$round]['games'][] = [
-                    'player1' => [
-                        'id' => null,
-                        'name' => 'TBD',
-                        'winner' => false
-                    ],
-                    'player2' => [
-                        'id' => null,
-                        'name' => 'TBD',
-                        'winner' => false
-                    ]
-                ];
-            }
-        }
-
-        // Susun ulang hasil dalam bentuk array numerik
-        $rounds = array_values($groupedRounds);
-
-        // Tentukan status berdasarkan apakah semua game masih kosong atau tidak
-        $status = $allGamesEmpty ? "pending" : "ongoing";
+        // Ubah ke array numerik (tanpa menghapus round yang kosong)
+        $rounds = array_values(array_map(function ($round) {
+            return ['games' => $round['games']];
+        }, $groupedRounds));
 
         return response()->json([
             'rounds' => $rounds,
             'match_chart' => $matchChart,
-            'status' => $status
+            'status' => $allGamesEmpty ? 'pending' : 'ongoing',
         ]);
     }
+
+
 
     
 
     public function listMatches(Request $request, $tournamentId)
     {
         $query = TournamentMatch::with([
-                'participantOne:id,name,contingent_id',
-                'participantOne.contingent:id,name',
-                'participantTwo:id,name,contingent_id',
-                'participantTwo.contingent:id,name',
-                'winner:id,name,contingent_id',
-                'winner.contingent:id,name',
-                'pool:id,name,tournament_id'
-            ])
-            ->whereHas('pool', function ($q) use ($tournamentId) {
-                $q->where('tournament_id', $tournamentId);
-            })
-            ->whereNotExists(function ($query) {
+            'participantOne:id,name,contingent_id',
+            'participantOne.contingent:id,name',
+            'participantTwo:id,name,contingent_id',
+            'participantTwo.contingent:id,name',
+            'winner:id,name,contingent_id',
+            'winner.contingent:id,name',
+            'pool:id,name,tournament_id,category_class_id,match_category_id',
+            'pool.categoryClass:id,name,age_category_id',
+            'pool.matchCategory:id,name' // ✅ biar nggak error pas akses matchCategory
+        ])
+        ->whereHas('pool', function ($q) use ($tournamentId) {
+            $q->where('tournament_id', $tournamentId);
+        });
+
+        // ✅ Exclude scheduled match kalau tidak ada flag include_scheduled
+        if (!$request->boolean('include_scheduled')) {
+            $query->whereNotExists(function ($query) {
                 $query->select(DB::raw(1))
                     ->from('match_schedule_details')
                     ->whereColumn('match_schedule_details.tournament_match_id', 'tournament_matches.id');
             });
+        }
 
-        // Optional filters (keep existing)
+        // Filter lainnya tetap
         if ($request->has('match_category_id')) {
-            $query->where('match_category_id', $request->match_category_id);
+            $query->whereHas('pool', function ($q) use ($request) {
+                $q->where('match_category_id', $request->match_category_id);
+            });
         }
 
         if ($request->has('age_category_id')) {
@@ -535,14 +583,110 @@ class TournamentMatchController extends Controller
             $query->where('pool_id', $request->pool_id);
         }
 
-        $matches = $query->orderBy('round')->orderBy('match_number')->get();
+        // Group dan return data tetap
+        $matches = $query
+            ->orderBy('pool_id')
+            ->orderBy('round')
+            ->orderBy('match_number')
+            ->get();
+
+        $groupedMatches = $matches->groupBy('pool_id');
+
+        $data = $groupedMatches->map(function ($matches, $poolId) {
+            $firstMatch = $matches->first();
+            $pool = $firstMatch->pool;
+
+            $roundGroups = $matches->groupBy('round');
+            $totalRounds = $roundGroups->count();
+            $roundLabels = $this->getRoundLabels($totalRounds);
+
+            $rounds = $roundGroups->map(function ($matchesInRound, $round) use ($roundLabels) {
+                return [
+                    'round' => (int) $round,
+                    'round_label' => $roundLabels[$round] ?? "Babak {$round}",
+                    'matches' => $matchesInRound->values()
+                ];
+            })->values();
+
+            return [
+                'pool_id'    => $poolId,
+                'pool_name'  => $pool->name,
+                'match_category_id' => $pool->matchCategory->id ?? null,
+                'class_name' => $pool->categoryClass->name ?? '-',
+                'rounds'     => $rounds
+            ];
+        })->values();
 
         return response()->json([
-            'message' => 'List pertandingan berhasil diambil (excluding already scheduled matches).',
-            'data' => $matches
+            'message' => 'List pertandingan berhasil diambil',
+            'data' => $data
         ]);
     }
 
+
+    
+    private function getRoundLabels($totalRounds)
+    {
+        $labels = [];
+
+        for ($i = 1; $i <= $totalRounds; $i++) {
+            if ($totalRounds === 1) {
+                $labels[$i] = "Final";
+            } elseif ($totalRounds === 2) {
+                $labels[$i] = $i === 1 ? "Semifinal" : "Final";
+            } elseif ($totalRounds === 3) {
+                $labels[$i] = $i === 1 ? "Perempat Final" : ($i === 2 ? "Semifinal" : "Final");
+            } else {
+                if ($i === 1) {
+                    $labels[$i] = "Penyisihan";
+                } elseif ($i === $totalRounds - 2) {
+                    $labels[$i] = "Perempat Final";
+                } elseif ($i === $totalRounds - 1) {
+                    $labels[$i] = "Semifinal";
+                } elseif ($i === $totalRounds) {
+                    $labels[$i] = "Final";
+                } else {
+                    $labels[$i] = "Babak {$i}";
+                }
+            }
+        }
+
+        return $labels;
+    }
+
+
+    public function getAvailableRounds(Request $request, $tournamentId)
+    {
+       
+    
+        $roundLevels = \App\Models\TournamentMatch::query()
+        ->select('tournament_matches.round')
+        ->join('pools', 'pools.id', '=', 'tournament_matches.pool_id')
+        ->where('pools.tournament_id', $tournamentId)
+        ->distinct()
+        ->pluck('tournament_matches.round')
+        ->toArray();
+    
+    
+        if (empty($roundLevels)) {
+            return response()->json([]);
+        }
+    
+        $totalRounds = max($roundLevels);
+        $allLabels = $this->getRoundLabels($totalRounds);
+    
+        $filteredLabels = [];
+        foreach ($roundLevels as $level) {
+            if (isset($allLabels[$level])) {
+                $filteredLabels[$level] = $allLabels[$level];
+            }
+        }
+    
+        return response()->json([
+            'rounds' => $filteredLabels
+        ]);
+    }
+    
     private function addNextRounds($bracket, $winners)
     {
         $maxRounds = count($bracket);
@@ -560,8 +704,6 @@ class TournamentMatchController extends Controller
                         'next_match_id' => $match->next_match_id,
                         'team_member_1_name' => $participant1 === "TBD" ? "TBD" : $this->getParticipantName($participant1),
                         'team_member_2_name' => $participant2 === "TBD" ? "TBD" : $this->getParticipantName($participant2),
-                        //'team_member_1_contingent' => "TBD",
-//'team_member_2_contingent' => "TBD",
                         'winner' => "TBD",
                     ];
                 }

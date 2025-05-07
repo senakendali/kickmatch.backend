@@ -50,10 +50,14 @@ class TournamentMatch extends Model
     }
 
     
-    public function scheduleDetails()
+    public function scheduleDetail()
     {
-        return $this->hasMany(MatchScheduleDetail::class);
+        return $this->hasOne(MatchScheduleDetail::class, 'tournament_match_id');
     }
+
+
+
+    
 
 }
 

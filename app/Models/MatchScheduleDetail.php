@@ -24,4 +24,10 @@ class MatchScheduleDetail extends Model
     {
         return $this->belongsTo(TournamentMatch::class);
     }
+
+    public function schedule()
+{
+    return $this->belongsTo(MatchSchedule::class, 'match_schedule_id');
+}
+
 }

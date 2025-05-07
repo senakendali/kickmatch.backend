@@ -27,11 +27,14 @@ class Pool extends Model
 
     public function categoryClass()
     {
-        return $this->belongsTo(CategoryClass::class);
+        return $this->belongsTo(CategoryClass::class, 'category_class_id');
     }
+
 
     public function matches()
     {
         return $this->hasMany(TournamentMatch::class);
     }
+
+    
 }

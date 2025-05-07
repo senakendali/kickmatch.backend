@@ -16,7 +16,7 @@ class UserSeeder extends Seeder
     {
 
         
-        $data['name'] =  'Administrator';
+        /*$data['name'] =  'Administrator';
         $data['email'] =  'admin@cjmanajemen.co.id';
         $data['password'] = Hash::make('System24jam');
        
@@ -25,6 +25,18 @@ class UserSeeder extends Seeder
         $data['name'] =  'Administrator';
         $data['email'] =  'owner@cjmanajemen.co.id';
         $data['password'] = Hash::make('System24jam');
+       
+        User::firstOrCreate($data);*/
+
+        $data['name'] =  'Administrator';
+        $data['email'] =  'adminclat@cjmanajemen.co.id';
+        $data['password'] = Hash::make('636TysQR');
+       
+        User::firstOrCreate($data);
+
+        $data['name'] =  'Administrator';
+        $data['email'] =  'adminipsp@cjmanajemen.co.id';
+        $data['password'] = Hash::make('636TysQR');
        
         User::firstOrCreate($data);
     }

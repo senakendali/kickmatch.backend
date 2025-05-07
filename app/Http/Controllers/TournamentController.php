@@ -24,21 +24,38 @@ class TournamentController extends Controller
     {
         setlocale(LC_TIME, 'id_ID');
     }
+    
     public function index(Request $request)
     {
-        // Check apakah fetch_all bernilai true atau false
+        $user = $request->user();
         $fetchAll = $request->query('fetch_all', false);
 
-        if ($fetchAll) {
-            // Ambil semua data tanpa pagination dan order by id desc
-            $members = Tournament::orderBy('id', 'desc')->get();
-        } else {
-            // Ambil data dengan pagination 10 item per halaman dan order by id desc
-            $members = Tournament::orderBy('id', 'desc')->paginate(10);
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
-        return response()->json($members, 200);
+        if ($user->group && ($user->group->name === 'Owner' || $user->group->name === 'User')) {
+            // Owner bisa lihat semua turnamen
+            $query = Tournament::query();
+        } elseif ($user->group && $user->group->name === 'Event PIC') {
+            // Admin hanya lihat 1 turnamen yang dia pegang
+            $query = Tournament::where('id', $user->tournament_id);
+        } else {
+            // User lain tidak bisa akses
+            return response()->json([], 403);
+        }
+
+        $query->orderBy('id', 'desc');
+
+        $tournaments = $fetchAll
+            ? $query->get()
+            : $query->paginate(10);
+
+        return response()->json($tournaments, 200);
     }
+
+
+    
 
 
     public function getTournamentGallery()

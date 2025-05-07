@@ -14,6 +14,70 @@ class TeamMemberController extends Controller
     public function index(Request $request)
     {
         try {
+            $fetchAll = $request->query('fetch_all', false);
+            $is_payment_confirmation = $request->query('is_payment_confirmation', false);
+
+            $user = auth()->user();
+            $search = $request->input('search', '');
+
+            if (!$user) {
+                return response()->json(['error' => 'Unauthorized'], 40);
+            }
+
+            $query = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories']);
+
+            // 🔍 Search
+            $query->when($search, function ($q) use ($search) {
+                $q->where('name', 'like', "%$search%")
+                ->orWhereHas('contingent', function ($qc) use ($search) {
+                    $qc->where('name', 'like', "%$search%");
+                })
+                ->orWhereHas('matchCategory', function ($qm) use ($search) {
+                    $qm->where('name', 'like', "%$search%");
+                });
+            });
+
+            // 🔒 Filtering berdasarkan group
+            if ($user->group && $user->group->name === 'Owner') {
+                // Owner lihat semua
+            } elseif ($user->group && $user->group->name === 'Event PIC') {
+                // Admin hanya member dari kontingen yang ikut tournament dia via pivot
+                $query->whereHas('contingent.tournamentContingents', function ($q) use ($user) {
+                    $q->where('tournament_id', $user->tournament_id);
+                });
+            } else {
+                // User biasa hanya member dari kontingen milik dia
+                $query->whereHas('contingent', function ($q) use ($user) {
+                    $q->where('owner_id', $user->id);
+                });
+            }
+
+            // 🔄 Filter Billing Detail jika mode payment confirmation
+            if ($is_payment_confirmation) {
+                $query->whereHas('billingDetails');
+            }
+
+            // 🔄 Fetch all atau paginasi
+            $members = $fetchAll ? $query->get() : $query->paginate(10);
+
+            // ✅ Tandai jika ada di billing details
+            $members->transform(function ($member) {
+                $member->exists_in_billing_details = BillingDetail::where('team_member_id', $member->id)->exists();
+                return $member;
+            });
+
+            return response()->json($members, 200);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+
+    
+
+    public function index_(Request $request)
+    {
+        try {
             // Check for a query parameter to decide the mode
             $fetchAll = $request->query('fetch_all', false);
             $is_payment_confirmation = $request->query('is_payment_confirmation', false);

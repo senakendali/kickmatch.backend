@@ -29,4 +29,10 @@ class CategoryClass extends Model
     {
         return $this->hasMany(Pool::class);
     }
+
+    public function matchCategory()
+    {
+        return $this->belongsTo(MatchCategory::class, 'match_category_id');
+    }
+
 }

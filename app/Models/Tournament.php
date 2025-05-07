@@ -65,5 +65,12 @@ class Tournament extends Model
         return $this->hasMany(MatchSchedule::class);
     }
 
+    public function admin()
+    {
+        return $this->hasOne(User::class);
+    }
+
+
+
    
 }
