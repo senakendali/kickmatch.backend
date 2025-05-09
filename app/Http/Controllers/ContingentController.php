@@ -32,9 +32,11 @@ class ContingentController extends Controller
             if ($user->group && $user->group->name === 'Owner') {
                 // Owner lihat semua
             } elseif ($user->group && $user->group->name === 'Event PIC') {
-                // Admin hanya lihat kontingen yang berelasi dengan tournament dia, lewat pivot
-                $query->whereHas('tournamentContingents', function ($q) use ($user) {
-                    $q->where('tournament_id', $user->tournament_id);
+                // Event PIC bisa lihat kontingen dari tournament dia *atau* yang dia buat sendiri
+                $query->where(function ($q) use ($user) {
+                    $q->whereHas('tournamentContingents', function ($subQ) use ($user) {
+                        $subQ->where('tournament_id', $user->tournament_id);
+                    })->orWhere('owner_id', $user->id);
                 });
             } else {
                 // User biasa hanya kontingen miliknya

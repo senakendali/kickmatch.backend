@@ -42,9 +42,15 @@ class TeamMemberController extends Controller
                 // Owner lihat semua
             } elseif ($user->group && $user->group->name === 'Event PIC') {
                 // Admin hanya member dari kontingen yang ikut tournament dia via pivot
-                $query->whereHas('contingent.tournamentContingents', function ($q) use ($user) {
-                    $q->where('tournament_id', $user->tournament_id);
+                $query->where(function ($q) use ($user) {
+                    $q->whereHas('contingent.tournamentContingents', function ($subQ) use ($user) { 
+                        $subQ->where('tournament_id', $user->tournament_id);
+                    })->orWhereHas('contingent', function ($subQ) use ($user) {
+                        $subQ->where('owner_id', $user->id);
+                    });
                 });
+                
+                
             } else {
                 // User biasa hanya member dari kontingen milik dia
                 $query->whereHas('contingent', function ($q) use ($user) {

@@ -33,6 +33,7 @@ use App\Http\Controllers\TournamentArenaController;
 use App\Http\Controllers\TournamentContactPersonController;
 use App\Http\Controllers\MatchScheduleController;
 use App\Http\Controllers\SyncController;
+use App\Http\Controllers\SeniMatchController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', function () {
@@ -203,6 +204,11 @@ Route::get('/tournaments/{tournamentId}/matches', [TournamentMatchController::cl
 Route::get('/match-schedules/{tournamentId}/matches', [TournamentMatchController::class, 'allMatches']);
 Route::get('/tournaments/{tournamentId}/available-rounds', [TournamentMatchController::class, 'getAvailableRounds']);
 
+// Generate Match (Seni)
+
+Route::post('/seni/generate-match', [SeniMatchController::class, 'generate']);
+Route::get('/seni/matches', [SeniMatchController::class, 'index']);
+Route::get('/seni/participant-counts/', [SeniMatchController::class, 'getParticipantCounts']);
 
 
 // Tournament Settings

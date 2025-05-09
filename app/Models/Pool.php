@@ -36,5 +36,11 @@ class Pool extends Model
         return $this->hasMany(TournamentMatch::class);
     }
 
+    public function seniMatches()
+    {
+        return $this->hasMany(SeniMatch::class);
+    }
+
+
     
 }

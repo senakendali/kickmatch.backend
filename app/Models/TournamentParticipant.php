@@ -17,6 +17,7 @@ class TournamentParticipant extends Model
 
     public function participant()
     {
-        return $this->belongsTo(TeamMember::class);
+        return $this->belongsTo(TeamMember::class, 'team_member_id');
     }
+
 }
