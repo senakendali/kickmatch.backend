@@ -208,6 +208,7 @@ Route::get('/tournaments/{tournamentId}/available-rounds', [TournamentMatchContr
 
 Route::post('/seni/generate-match', [SeniMatchController::class, 'generate']);
 Route::get('/seni/matches', [SeniMatchController::class, 'index']);
+Route::get('/seni/match-list', [SeniMatchController::class, 'matchList']);
 Route::get('/seni/participant-counts/', [SeniMatchController::class, 'getParticipantCounts']);
 
 

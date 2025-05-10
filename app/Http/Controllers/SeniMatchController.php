@@ -8,10 +8,12 @@ use App\Models\SeniMatch;
 use App\Models\TeamMember;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
 
 class SeniMatchController extends Controller
 {
-    public function index()
+    public function index_()
     {
         $matches = SeniMatch::with([
             'matchCategory',
@@ -45,6 +47,107 @@ class SeniMatchController extends Controller
 
         return response()->json($grouped);
     }
+
+    public function index(Request $request)
+    {
+        $tournamentId = $request->query('tournament_id');
+
+        $query = SeniMatch::with([
+            'matchCategory',
+            'contingent',
+            'teamMember1',
+            'teamMember2',
+            'teamMember3',
+            'pool.ageCategory',
+        ])
+        ->orderBy('pool_id')
+        ->orderBy('match_order');
+
+        // ⬇️ Filter berdasarkan tournament_id kalau dikirim
+        if ($tournamentId) {
+            $query->whereHas('pool', function ($q) use ($tournamentId) {
+                $q->where('tournament_id', $tournamentId);
+            });
+        }
+
+        $matches = $query->get();
+
+        $grouped = $matches->groupBy(fn($match) => $match->matchCategory->name . '|' . $match->gender)
+            ->map(function ($matchesByCategory, $key) {
+                [$category, $gender] = explode('|', $key);
+
+                return [
+                    'category' => $category,
+                    'gender' => $gender,
+                    'pools' => $matchesByCategory->groupBy(fn($match) => $match->pool->name)
+                        ->map(function ($poolMatches, $poolName) {
+                            return [
+                                'name' => $poolName,
+                                'matches' => $poolMatches->values()
+                            ];
+                        })->values()
+                ];
+            })->values();
+
+        return response()->json($grouped);
+    }
+
+    public function matchList(Request $request)
+    {
+        $tournamentId = $request->query('tournament_id');
+        $includeScheduled = $request->boolean('include_scheduled'); // ← tambahin flag
+
+        $query = SeniMatch::with([
+            'matchCategory',
+            'contingent',
+            'teamMember1',
+            'teamMember2',
+            'teamMember3',
+            'pool.ageCategory',
+        ])
+        ->orderBy('pool_id')
+        ->orderBy('match_order');
+
+        // ⬇️ Exclude yang sudah dijadwalkan hanya kalau bukan mode edit
+        if (!$includeScheduled) {
+            $query->whereNotExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('match_schedule_details')
+                    ->whereColumn('match_schedule_details.seni_match_id', 'seni_matches.id');
+            });
+        }
+
+        // ⬇️ Filter berdasarkan tournament_id
+        if ($tournamentId) {
+            $query->whereHas('pool', function ($q) use ($tournamentId) {
+                $q->where('tournament_id', $tournamentId);
+            });
+        }
+
+        $matches = $query->get();
+
+        $grouped = $matches->groupBy(fn($match) => $match->matchCategory->name . '|' . $match->gender)
+            ->map(function ($matchesByCategory, $key) {
+                [$category, $gender] = explode('|', $key);
+
+                return [
+                    'category' => $category,
+                    'gender' => $gender,
+                    'pools' => $matchesByCategory->groupBy(fn($match) => $match->pool->name)
+                        ->map(function ($poolMatches, $poolName) {
+                            return [
+                                'name' => $poolName,
+                                'matches' => $poolMatches->values()
+                            ];
+                        })->values()
+                ];
+            })->values();
+
+        return response()->json($grouped);
+    }
+
+
+
 
 
 

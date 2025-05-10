@@ -9,7 +9,9 @@ class MatchScheduleDetail extends Model
 {
     protected $fillable = [
         'match_schedule_id',
+        'match_category_id',
         'tournament_match_id',
+        'seni_match_id',
         'order',
         'start_time',
         'note',
@@ -26,8 +28,14 @@ class MatchScheduleDetail extends Model
     }
 
     public function schedule()
-{
-    return $this->belongsTo(MatchSchedule::class, 'match_schedule_id');
-}
+    {
+        return $this->belongsTo(MatchSchedule::class, 'match_schedule_id');
+    }
+
+    public function seniMatch()
+    {
+        return $this->belongsTo(\App\Models\SeniMatch::class, 'seni_match_id');
+    }
+
 
 }

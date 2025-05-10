@@ -14,14 +14,20 @@ class MatchScheduleController extends Controller
     public function index(Request $request)
     {
         try {
-            $schedules = MatchSchedule::with(['arena', 'tournament', 'details.tournamentMatch'])
-                ->paginate($request->get('per_page', 10));
+            $schedules = MatchSchedule::with([
+                'arena',
+                'tournament',
+                'details.tournamentMatch.pool.matchCategory',
+                'details.seniMatch.matchCategory',
+            ])
+            ->paginate($request->get('per_page', 10));
 
             return response()->json($schedules, 200);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Unable to fetch match schedules', 'message' => $e->getMessage()], 500);
         }
     }
+
 
     public function getSchedules(Request $request)
     {
@@ -194,30 +200,32 @@ class MatchScheduleController extends Controller
         $request->validate([
             'tournament_id' => 'required|exists:tournaments,id',
             'tournament_arena_id' => 'required|exists:tournament_arena,id',
+            'match_category_id' => 'nullable|exists:match_categories,id', // bisa nullable kalau seni
             'scheduled_date' => 'required|date',
             'start_time' => 'required',
             'end_time' => 'nullable',
             'note' => 'nullable|string',
             'matches' => 'required|array|min:1',
-            'matches.*.tournament_match_id' => 'required|exists:tournament_matches,id',
+            'matches.*.note' => 'nullable|string',
+            'matches.*.tournament_match_id' => 'nullable|exists:tournament_matches,id',
+            'matches.*.seni_match_id' => 'nullable|exists:seni_matches,id',
             'matches.*.order' => 'nullable|integer',
             'matches.*.start_time' => 'nullable',
-            'matches.*.note' => 'nullable|string',
         ]);
-    
-        // Cek duplikat
-        $exists = \App\Models\MatchScheduleDetail::whereIn('tournament_match_id', collect($request->matches)->pluck('tournament_match_id'))
+
+        // Cek duplikat (khusus tanding)
+        $exists = \App\Models\MatchScheduleDetail::whereIn('tournament_match_id', collect($request->matches)->pluck('tournament_match_id')->filter())
             ->whereHas('schedule', function ($q) use ($request) {
                 $q->where('tournament_arena_id', $request->tournament_arena_id)
-                  ->where('scheduled_date', $request->scheduled_date);
+                ->where('scheduled_date', $request->scheduled_date);
             })->exists();
-    
+
         if ($exists) {
             return response()->json(['error' => 'Some matches are already scheduled on this arena and date'], 422);
         }
-    
+
         DB::beginTransaction();
-    
+
         try {
             $schedule = \App\Models\MatchSchedule::create([
                 'tournament_id' => $request->tournament_id,
@@ -227,28 +235,53 @@ class MatchScheduleController extends Controller
                 'end_time' => $request->end_time,
                 'note' => $request->note,
             ]);
-    
+
             $orderCounter = 1;
             foreach ($request->matches as $match) {
-                $schedule->details()->create([
-                    'tournament_match_id' => $match['tournament_match_id'],
-                    'order' => $match['order'] ?? $orderCounter++,
+                $data = [
                     'start_time' => $match['start_time'] ?? null,
                     'note' => $match['note'] ?? null,
-                ]);
+                ];
+
+                // 🥋 TANDING
+                if (!empty($match['tournament_match_id'])) {
+                    $data['tournament_match_id'] = $match['tournament_match_id'];
+                    $data['match_category_id'] = $request->match_category_id;
+                    $data['order'] = $match['order'] ?? $orderCounter++;
+                }
+
+                // 🎭 SENI
+                if (!empty($match['seni_match_id'])) {
+                    $seni = \App\Models\SeniMatch::find($match['seni_match_id']);
+
+                    if ($seni) {
+                        $data['seni_match_id'] = $seni->id;
+                        $data['match_category_id'] = $seni->match_category_id;
+                        $data['order'] = $match['order'] ?? $seni->match_order ?? $orderCounter++;
+                    }
+                }
+
+                $schedule->details()->create($data);
             }
-    
+
             DB::commit();
-    
+
             return response()->json([
                 'message' => 'Match schedule created successfully',
-                'data' => $schedule->load('details.tournamentMatch')
+                'data' => $schedule->load('details')
             ], 201);
+
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Failed to create match schedule', 'message' => $e->getMessage()], 500);
+            return response()->json([
+                'error' => 'Failed to create match schedule',
+                'message' => $e->getMessage()
+            ], 500);
         }
     }
+
+
+
     
 
     public function update(Request $request, $id)
@@ -261,10 +294,16 @@ class MatchScheduleController extends Controller
             'end_time' => 'nullable',
             'note' => 'nullable|string',
             'matches' => 'required|array|min:1',
-            'matches.*.tournament_match_id' => 'required|exists:tournament_matches,id',
+            'matches.*.note' => 'nullable|string',
+
+            // Tanding
+            'matches.*.tournament_match_id' => 'nullable|exists:tournament_matches,id',
+
+            // Seni
+            'matches.*.seni_match_id' => 'nullable|exists:seni_matches,id',
+
             'matches.*.order' => 'nullable|integer',
             'matches.*.start_time' => 'nullable',
-            'matches.*.note' => 'nullable|string',
         ]);
 
         $schedule = \App\Models\MatchSchedule::findOrFail($id);
@@ -286,25 +325,39 @@ class MatchScheduleController extends Controller
 
             $orderCounter = 1;
             foreach ($request->matches as $match) {
-                $schedule->details()->create([
-                    'tournament_match_id' => $match['tournament_match_id'],
+                $data = [
+                    'note' => $match['note'] ?? null,
                     'order' => $match['order'] ?? $orderCounter++,
                     'start_time' => $match['start_time'] ?? null,
-                    'note' => $match['note'] ?? null,
-                ]);
+                ];
+
+                if (!empty($match['tournament_match_id'])) {
+                    $data['tournament_match_id'] = $match['tournament_match_id'];
+                    $data['match_category_id'] = $request->match_category_id;
+                }
+
+                if (!empty($match['seni_match_id'])) {
+                    $data['seni_match_id'] = $match['seni_match_id'];
+                }
+
+                $schedule->details()->create($data);
             }
 
             DB::commit();
 
             return response()->json([
                 'message' => 'Match schedule updated successfully',
-                'data' => $schedule->load('details.tournamentMatch')
+                'data' => $schedule->load('details')
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Failed to update match schedule', 'message' => $e->getMessage()], 500);
+            return response()->json([
+                'error' => 'Failed to update match schedule',
+                'message' => $e->getMessage()
+            ], 500);
         }
     }
+
 
 
 

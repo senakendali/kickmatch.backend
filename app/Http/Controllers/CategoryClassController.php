@@ -23,53 +23,52 @@ class CategoryClassController extends Controller
     }
 
     public function getClassOnTeamMember(Request $request)
-{
-    $ageCategoryId = $request->query('age_category_id');
-    $tournamentId = $request->query('tournament_id');
-    $matchCategoryId = $request->query('match_category_id');
+    {
+        $ageCategoryId = $request->query('age_category_id');
+        $tournamentId = $request->query('tournament_id');
+        $matchCategoryId = $request->query('match_category_id');
 
-    if (!$tournamentId) {
-        return response()->json(['error' => 'tournament_id is required'], 400);
+        if (!$tournamentId) {
+            return response()->json(['error' => 'tournament_id is required'], 400);
+        }
+
+        $teamMembers = TeamMember::whereHas('tournamentParticipants', function ($q) use ($tournamentId) {
+                $q->where('tournament_id', $tournamentId);
+            })
+            ->when($matchCategoryId, function ($q) use ($matchCategoryId) {
+                $q->where('match_category_id', $matchCategoryId);
+            })
+            ->with(['categoryClass' => function ($q) use ($ageCategoryId) {
+                if ($ageCategoryId) {
+                    $q->where('age_category_id', $ageCategoryId);
+                }
+            }, 'ageCategory'])
+            ->get()
+            ->filter(fn ($tm) => $tm->categoryClass !== null); // ✅ pastikan hanya class yang cocok
+
+        $grouped = $teamMembers->groupBy('category_class_id');
+
+        $result = $grouped->map(function ($members, $classId) {
+            $class = $members->first()->categoryClass;
+            $ageCategory = $class->ageCategory;
+
+            return [
+                'class_id' => $classId,
+                'gender' => $class->gender,
+                'class_name' => $class->name,
+                'weight_min' => $class->weight_min,
+                'weight_max' => $class->weight_max,
+                'age_category_id' => $class->age_category_id,
+                'age_category_name' => $ageCategory->name ?? '-',
+                'team_member_count' => $members->count(),
+            ];
+        })->values();
+
+        return response()->json($result);
     }
 
-    // Ambil semua team member yang terdaftar di turnamen
-    $teamMembers = TeamMember::whereHas('tournamentParticipants', function ($q) use ($tournamentId) {
-            $q->where('tournament_id', $tournamentId);
-        })
-        ->when($ageCategoryId, function ($q) use ($ageCategoryId) {
-            $q->where('age_category_id', $ageCategoryId);
-        })
-        ->when($matchCategoryId, function ($q) use ($matchCategoryId) {
-            $q->where('match_category_id', $matchCategoryId);
-        })
-        ->with('categoryClass')
-        ->get();
 
-    // Kelompokkan berdasarkan class
-    $grouped = $teamMembers->groupBy('category_class_id');
-
-    $result = $grouped->map(function ($members, $classId) {
-        $class = $members->first()->categoryClass;
-
-        return [
-            'class_id' => $classId,
-            'gender' => $class->gender,
-            'class_name' => $class->name,
-            'weight_min' => $class->weight_min,
-            'weight_max' => $class->weight_max,
-            'team_member_count' => $members->count(), // ✅ Jumlah peserta terfilter
-        ];
-    })->values();
-
-    return response()->json($result);
-}
-
-
-
-
-
-
-
+    
 
     public function getClassOnTeamMember_(Request $request)
     {

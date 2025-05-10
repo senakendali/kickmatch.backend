@@ -55,6 +55,12 @@ class TournamentMatch extends Model
         return $this->hasOne(MatchScheduleDetail::class, 'tournament_match_id');
     }
 
+    public function matchCategory()
+    {
+        return $this->belongsTo(\App\Models\MatchCategory::class, 'match_category_id');
+    }
+
+
 
 
     

@@ -9,6 +9,8 @@ use App\Models\TournamentParticipant;
 use App\Models\MatchSchedule;
 use App\Models\MatchScheduleDetail;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
 
 class TournamentMatchController extends Controller
 {
@@ -548,9 +550,10 @@ class TournamentMatchController extends Controller
             'winner:id,name,contingent_id',
             'winner.contingent:id,name',
             'pool:id,name,tournament_id,category_class_id,match_category_id',
-            'pool.categoryClass:id,name,age_category_id',
-            'pool.matchCategory:id,name' // ✅ biar nggak error pas akses matchCategory
-        ])
+            'pool.categoryClass:id,name,age_category_id,gender',
+            'pool.categoryClass.ageCategory:id,name', // ✅ ini buat ambil nama usia
+            'pool.matchCategory:id,name',
+        ])                
         ->whereHas('pool', function ($q) use ($tournamentId) {
             $q->where('tournament_id', $tournamentId);
         });
@@ -608,13 +611,27 @@ class TournamentMatchController extends Controller
                 ];
             })->values();
 
+            
+            Log::info([
+                'class_id' => $pool->category_class_id,
+                'age_id_from_pool' => $pool->categoryClass->age_category_id ?? null,
+                'age_name_from_rel' => $pool->categoryClass->ageCategory->name ?? null,
+            ]);
+
+            
             return [
                 'pool_id'    => $poolId,
                 'pool_name'  => $pool->name,
                 'match_category_id' => $pool->matchCategory->id ?? null,
                 'class_name' => $pool->categoryClass->name ?? '-',
+                'age_category_id' => $pool->categoryClass->age_category_id ?? null,
+                'age_category_name' => $pool->categoryClass->ageCategory->name ?? '-',
+                'gender' => $pool->categoryClass->gender ?? null,
                 'rounds'     => $rounds
             ];
+            
+            
+            
         })->values();
 
         return response()->json([
