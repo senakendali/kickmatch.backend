@@ -50,6 +50,17 @@ class Contingent extends Model
     {
         return $this->hasMany(TournamentContingent::class);
     }
+    public function tournaments()
+    {
+        return $this->hasManyThrough(
+            Tournament::class,
+            TournamentContingent::class,
+            'contingent_id', // FK di tournament_contingents
+            'id',            // PK di tournaments
+            'id',            // PK di contingents
+            'tournament_id'  // FK di tournament_contingents
+        );
+    }
 
     
 }

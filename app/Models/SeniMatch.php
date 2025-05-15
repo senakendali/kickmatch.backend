@@ -61,4 +61,6 @@ class SeniMatch extends Model
     {
         return collect([$this->teamMember1, $this->teamMember2, $this->teamMember3])->filter();
     }
+
+   
 }

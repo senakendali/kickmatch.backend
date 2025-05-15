@@ -15,6 +15,7 @@ class ContingentController extends Controller
         try {
             $user = auth()->user();
             $search = $request->input('search', '');
+            $tournamentId = $request->input('tournament_id');
 
             $query = Contingent::query();
 
@@ -28,28 +29,56 @@ class ContingentController extends Controller
                 });
             }
 
-            // Filter akses berdasarkan group
+            // Filter by tournament_id
+            if ($tournamentId) {
+                $query->whereHas('tournamentContingents', function ($q) use ($tournamentId) {
+                    $q->where('tournament_id', $tournamentId);
+                });
+            }
+
+            // Filter berdasarkan role user
             if ($user->group && $user->group->name === 'Owner') {
-                // Owner lihat semua
+                // Lihat semua
             } elseif ($user->group && $user->group->name === 'Event PIC') {
-                // Event PIC bisa lihat kontingen dari tournament dia *atau* yang dia buat sendiri
                 $query->where(function ($q) use ($user) {
                     $q->whereHas('tournamentContingents', function ($subQ) use ($user) {
                         $subQ->where('tournament_id', $user->tournament_id);
                     })->orWhere('owner_id', $user->id);
                 });
             } else {
-                // User biasa hanya kontingen miliknya
                 $query->where('owner_id', $user->id);
             }
 
-            $contingents = $query->withCount('teamMembers')->paginate(10);
+            $contingents = $query
+            ->with(['tournaments' => function ($q) {
+                $q->select('tournaments.id', 'name');
+            }])
+            ->withCount('teamMembers')
+            ->paginate(10);
+
+
+            // Transform response untuk tambah tournament_name
+            $transformed = $contingents->getCollection()->transform(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'pic_name' => $item->pic_name,
+                    'pic_email' => $item->pic_email,
+                    'pic_phone' => $item->pic_phone,
+                    'team_members_count' => $item->team_members_count,
+                    'tournament_name' => $item->tournaments->first()?->name ?? null,
+                ];
+            });
+
+            // Replace collection
+            $contingents->setCollection($transformed);
 
             return response()->json($contingents);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
 
 
     public function index_(Request $request)

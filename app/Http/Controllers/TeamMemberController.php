@@ -8,6 +8,8 @@ use App\Models\AgeCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class TeamMemberController extends Controller
 {
@@ -16,67 +18,153 @@ class TeamMemberController extends Controller
         try {
             $fetchAll = $request->query('fetch_all', false);
             $is_payment_confirmation = $request->query('is_payment_confirmation', false);
+            $tournamentId = $request->query('tournament_id');
 
             $user = auth()->user();
             $search = $request->input('search', '');
 
             if (!$user) {
-                return response()->json(['error' => 'Unauthorized'], 40);
+                return response()->json(['error' => 'Unauthorized'], 401);
             }
 
-            $query = TeamMember::with(['contingent', 'championshipCategory', 'matchCategory.tournamentCategories']);
+            // 🔗 Query awal + eager loading
+            $query = TeamMember::with([
+                'contingent.tournamentContingents.tournament', // untuk tournament_name
+                'championshipCategory',
+                'matchCategory.tournamentCategories'
+            ]);
 
             // 🔍 Search
-            $query->when($search, function ($q) use ($search) {
-                $q->where('name', 'like', "%$search%")
-                ->orWhereHas('contingent', function ($qc) use ($search) {
-                    $qc->where('name', 'like', "%$search%");
-                })
-                ->orWhereHas('matchCategory', function ($qm) use ($search) {
-                    $qm->where('name', 'like', "%$search%");
+            if ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%$search%")
+                    ->orWhereHas('contingent', function ($qc) use ($search) {
+                        $qc->where('name', 'like', "%$search%");
+                    })
+                    ->orWhereHas('matchCategory', function ($qm) use ($search) {
+                        $qm->where('name', 'like', "%$search%");
+                    });
                 });
-            });
+            }
 
-            // 🔒 Filtering berdasarkan group
+            // 🎯 Filter by tournament
+            if ($tournamentId) {
+                $query->whereHas('contingent.tournamentContingents', function ($q) use ($tournamentId) {
+                    $q->where('tournament_id', $tournamentId);
+                });
+            }
+
+            // 🔐 Filter berdasarkan grup user
             if ($user->group && $user->group->name === 'Owner') {
-                // Owner lihat semua
+                // lihat semua
             } elseif ($user->group && $user->group->name === 'Event PIC') {
-                // Admin hanya member dari kontingen yang ikut tournament dia via pivot
                 $query->where(function ($q) use ($user) {
-                    $q->whereHas('contingent.tournamentContingents', function ($subQ) use ($user) { 
+                    $q->whereHas('contingent.tournamentContingents', function ($subQ) use ($user) {
                         $subQ->where('tournament_id', $user->tournament_id);
                     })->orWhereHas('contingent', function ($subQ) use ($user) {
                         $subQ->where('owner_id', $user->id);
                     });
                 });
-                
-                
             } else {
-                // User biasa hanya member dari kontingen milik dia
                 $query->whereHas('contingent', function ($q) use ($user) {
                     $q->where('owner_id', $user->id);
                 });
             }
 
-            // 🔄 Filter Billing Detail jika mode payment confirmation
+            // 💰 Filter billing confirmation
             if ($is_payment_confirmation) {
                 $query->whereHas('billingDetails');
             }
 
-            // 🔄 Fetch all atau paginasi
+            // 📦 Ambil data
             $members = $fetchAll ? $query->get() : $query->paginate(10);
 
-            // ✅ Tandai jika ada di billing details
-            $members->transform(function ($member) {
+            // 🔁 Transform untuk inject tournament_name & billing flag
+            $transform = function ($member) {
+                $tournamentName = optional(
+                    $member->contingent?->tournamentContingents->first()?->tournament
+                )->name;
+
+                $member->tournament_name = $tournamentName;
                 $member->exists_in_billing_details = BillingDetail::where('team_member_id', $member->id)->exists();
+
                 return $member;
-            });
+            };
+
+            if ($fetchAll) {
+                $members = $members->map($transform);
+            } else {
+                $members->setCollection($members->getCollection()->map($transform));
+            }
 
             return response()->json($members, 200);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
+    public function export(Request $request)
+    {
+       
+        $search = $request->query('search');
+        $tournamentId = $request->query('tournament_id');
+
+        $query = TeamMember::with('contingent');
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                ->orWhereHas('contingent', function ($qc) use ($search) {
+                    $qc->where('name', 'like', "%{$search}%");
+                });
+            });
+        }
+
+        if ($tournamentId) {
+            $query->whereHas('contingent.tournamentContingents', function ($q) use ($tournamentId) {
+                $q->where('tournament_id', $tournamentId);
+            });
+        }
+
+        $teamMembers = $query->get();
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
+        // Header
+        $sheet->fromArray([
+            ['ID', 'Contingent', 'Nama', 'Tempat Lahir', 'Tanggal Lahir', 'Jenis Kelamin', 'Tinggi Badan', 'Berat Badan', 'NIK', 'No. KK', 'Alamat']
+        ], null, 'A1');
+
+        // Isi data
+        $row = 2;
+        foreach ($teamMembers as $member) {
+            $sheet->fromArray([
+                $member->id,
+                $member->contingent->name ?? '',
+                $member->name,
+                $member->birth_place,
+                $member->birth_date,
+                $member->gender,
+                $member->body_height,
+                $member->body_weight,
+                $member->nik,
+                $member->family_card_number,
+                $member->address,
+            ], null, "A{$row}");
+            $row++;
+        }
+
+        $writer = new Xlsx($spreadsheet);
+        $filename = 'team_members_' . date('Ymd') . '.xlsx';
+
+        return response()->streamDownload(function () use ($writer) {
+            $writer->save('php://output');
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
 
 
     

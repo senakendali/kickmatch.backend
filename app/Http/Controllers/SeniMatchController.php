@@ -6,6 +6,9 @@ use App\Models\TournamentParticipant;
 use App\Models\SeniPool;
 use App\Models\SeniMatch;
 use App\Models\TeamMember;
+use App\Models\Tournament;
+use App\Models\MatchSchedule;
+use App\Models\MatchScheduleDetail;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -91,6 +94,126 @@ class SeniMatchController extends Controller
 
         return response()->json($grouped);
     }
+
+    public function getSchedules($slug)
+    {
+        $tournament = Tournament::where('slug', $slug)->firstOrFail();
+
+        $query = MatchScheduleDetail::with([
+            'schedule.arena',
+            'schedule.tournament',
+            'seniMatch.contingent',
+            'seniMatch.teamMember1',
+            'seniMatch.teamMember2',
+            'seniMatch.teamMember3',
+            'seniMatch.pool.ageCategory',
+            'seniMatch.matchCategory'
+        ])
+        ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
+        ->whereHas('seniMatch');
+
+        // Optional filters (kalau dipakai di query string)
+        if (request()->filled('arena_name')) {
+            $query->whereHas('schedule.arena', function ($q) {
+                $q->where('name', request()->arena_name);
+            });
+        }
+
+        if (request()->filled('scheduled_date')) {
+            $query->whereHas('schedule', function ($q) {
+                $q->where('scheduled_date', request()->scheduled_date);
+            });
+        }
+
+        if (request()->filled('pool_name')) {
+            $query->whereHas('seniMatch.pool', function ($q) {
+                $q->where('name', request()->pool_name);
+            });
+        }
+
+        $details = $query->get();
+
+        $tournamentName = $tournament->name;
+        $grouped = [];
+
+        foreach ($details as $detail) {
+            $match = $detail->seniMatch;
+            if (!$match) continue;
+
+            $arenaName = $detail->schedule->arena->name ?? 'Tanpa Arena';
+            $scheduledDate = $detail->schedule->scheduled_date ?? 'Tanpa Tanggal';
+            $poolName = $match->pool->name ?? 'Tanpa Pool';
+            $category = $match->matchCategory->name ?? '-';
+            $gender = $match->gender ?? '-';
+            $matchType = $match->match_type;
+            $ageCategory = optional($match->pool?->ageCategory)->name ?? '-';
+
+            $groupKey = $arenaName . '||' . $scheduledDate;
+
+            $matchData = [
+                'id' => $match->id,
+                'match_order' => $detail->order,
+                'match_time' => $detail->start_time,
+                'contingent' => optional($match->contingent)?->only(['id', 'name']),
+                'team_member1' => optional($match->teamMember1)?->only(['id', 'name']),
+                'team_member2' => optional($match->teamMember2)?->only(['id', 'name']),
+                'team_member3' => optional($match->teamMember3)?->only(['id', 'name']),
+                'match_type' => $matchType,
+                'scheduled_date' => $scheduledDate,
+                'tournament_name' => $tournamentName,
+                'arena_name' => $arenaName,
+                'pool' => [
+                    'name' => $poolName,
+                    'age_category' => ['name' => $ageCategory],
+                ],
+            ];
+
+            $grouped[$groupKey]['arena_name'] = $arenaName;
+            $grouped[$groupKey]['scheduled_date'] = $scheduledDate;
+            $grouped[$groupKey]['tournament_name'] = $tournamentName;
+
+            $categoryKey = $category . '|' . $gender;
+            $grouped[$groupKey]['groups'][$categoryKey]['category'] = $category;
+            $grouped[$groupKey]['groups'][$categoryKey]['gender'] = $gender;
+
+            $grouped[$groupKey]['groups'][$categoryKey]['pools'][$poolName]['name'] = $poolName;
+            $grouped[$groupKey]['groups'][$categoryKey]['pools'][$poolName]['matches'][] = $matchData;
+        }
+
+        // Transform result
+        $result = [];
+
+        foreach ($grouped as $entry) {
+            $groups = [];
+            foreach ($entry['groups'] as $group) {
+                $pools = [];
+                foreach ($group['pools'] as $pool) {
+                    $pools[] = [
+                        'name' => $pool['name'],
+                        'matches' => $pool['matches'],
+                    ];
+                }
+
+                $groups[] = [
+                    'category' => $group['category'],
+                    'gender' => $group['gender'],
+                    'pools' => $pools,
+                ];
+            }
+
+            $result[] = [
+                'arena_name' => $entry['arena_name'],
+                'scheduled_date' => $entry['scheduled_date'],
+                'tournament_name' => $entry['tournament_name'],
+                'groups' => $groups,
+            ];
+        }
+
+        return response()->json(['data' => $result]);
+    }
+
+
+
 
     public function matchList(Request $request)
     {

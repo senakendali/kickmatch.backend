@@ -38,4 +38,9 @@ class SeniPool extends Model
     {
         return $this->hasMany(SeniMatch::class, 'pool_id');
     }
+
+    public function schedule()
+    {
+        return $this->belongsTo(MatchSchedule::class, 'schedule_id');
+    }
 }

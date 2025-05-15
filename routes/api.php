@@ -36,45 +36,7 @@ use App\Http\Controllers\SyncController;
 use App\Http\Controllers\SeniMatchController;
 use App\Models\TeamMember;
 
-Route::get('/team-members/export', function () {
-    // Ambil data dari database
-    $teamMembers = TeamMember::with('contingent')->get();
-
-    // Membuat file Excel (CSV format) sebagai output
-    $filename = 'team_members.xlsx';
-
-    // Set headers untuk file Excel
-    return response()->stream(function () use ($teamMembers) {
-        // Buka output stream untuk menulis ke browser
-        $file = fopen('php://output', 'w');
-
-        // Menambahkan header kolom
-        fputcsv($file, ['ID', 'Contingent', 'Nama', 'Tempat Lahir', 'Tanggal Lahir', 'Jenis Kelamin', 'Tinggi Badan', 'Berat Badan', 'NIK', 'Nomor Kartu Keluarga', 'Alamat']);
-
-        // Menambahkan data ke dalam sheet
-        foreach ($teamMembers as $teamMember) {
-            fputcsv($file, [
-                $teamMember->id,
-                $teamMember->contingent->name,
-                $teamMember->name,
-                $teamMember->birth_place,
-                $teamMember->birth_date,
-                $teamMember->gender,
-                $teamMember->body_height,
-                $teamMember->body_weight,
-                $teamMember->nik,
-                $teamMember->family_card_number,
-                $teamMember->address
-            ]);
-        }
-
-        // Menutup file setelah selesai
-        fclose($file);
-    }, 200, [
-        'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition' => "attachment; filename=\"$filename\"",
-    ]);
-});
+Route::get('/team-members/export', [TeamMemberController::class, 'export']);
 
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
@@ -236,8 +198,13 @@ Route::get('/tournaments/{id}/arenas', [TournamentArenaController::class, 'getBy
 Route::apiResource('tournament-contact-persons', TournamentContactPersonController::class);
 
 // Tournament Schedule
-Route::get('/tournaments/{id}/match-schedules', [MatchScheduleController::class, 'getSchedules']);
+Route::get('/tournaments/{slug}/match-schedules/tanding', [MatchScheduleController::class, 'getSchedules']);
 Route::apiResource('match-schedules', MatchScheduleController::class);
+
+Route::get('/tournaments/{slug}/match-schedules/seni', [SeniMatchController::class, 'getSchedules']);
+
+
+
 
 //Auth
 Route::post('/register', [AuthController::class, 'register']);

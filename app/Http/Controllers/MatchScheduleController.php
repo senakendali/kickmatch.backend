@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MatchSchedule;
 use App\Models\MatchScheduleDetail;
+use App\Models\Tournament;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -29,46 +30,47 @@ class MatchScheduleController extends Controller
     }
 
 
-    public function getSchedules(Request $request)
+    public function getSchedules($slug)
     {
+        $tournament = Tournament::where('slug', $slug)->firstOrFail();
+
         $query = MatchScheduleDetail::with([
             'schedule.arena',
             'schedule.tournament',
             'tournamentMatch.participantOne.contingent',
             'tournamentMatch.participantTwo.contingent',
             'tournamentMatch.pool'
-        ])->whereHas('tournamentMatch');
+        ])
+        ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
+        ->whereHas('tournamentMatch');
 
-        // Optional filters
-        if ($request->filled('arena_name')) {
-            $query->whereHas('schedule.arena', function ($q) use ($request) {
-                $q->where('name', $request->arena_name);
+        // Optional filters (gunakan query string tetap, jika mau)
+        if (request()->filled('arena_name')) {
+            $query->whereHas('schedule.arena', function ($q) {
+                $q->where('name', request()->arena_name);
             });
         }
 
-        if ($request->filled('scheduled_date')) {
-            $query->whereHas('schedule', function ($q) use ($request) {
-                $q->where('scheduled_date', $request->scheduled_date);
+        if (request()->filled('scheduled_date')) {
+            $query->whereHas('schedule', function ($q) {
+                $q->where('scheduled_date', request()->scheduled_date);
             });
         }
 
-        if ($request->filled('pool_name')) {
-            $query->whereHas('tournamentMatch.pool', function ($q) use ($request) {
-                $q->where('name', $request->pool_name);
+        if (request()->filled('pool_name')) {
+            $query->whereHas('tournamentMatch.pool', function ($q) {
+                $q->where('name', request()->pool_name);
             });
         }
 
         $details = $query->get();
 
-        // Ambil semua round level yang ada
+        // Generate labels
         $roundLevels = $details->pluck('tournamentMatch.round')->unique()->filter()->values()->toArray();
         $totalRounds = !empty($roundLevels) ? max($roundLevels) : 1;
         $roundLabelsMap = $this->getRoundLabels($totalRounds);
 
-        // Ambil nama turnamen dari salah satu detail (assumsi semua data dalam 1 turnamen)
-        $tournamentName = $details->first()->schedule->tournament->name ?? 'Tanpa Turnamen';
-
-        // ✅ Grouping by Arena + Date → Pool → Round
+        $tournamentName = $tournament->name ?? 'Tanpa Turnamen';
         $grouped = [];
 
         foreach ($details as $detail) {
@@ -87,16 +89,14 @@ class MatchScheduleController extends Controller
                 'contingent_two' => optional(optional($detail->tournamentMatch->participantTwo)->contingent)->name,
             ];
 
-            // gabung arena dan tanggal jadi 1 key unik
             $groupKey = $arenaName . '||' . $date;
             $grouped[$groupKey]['arena_name'] = $arenaName;
             $grouped[$groupKey]['scheduled_date'] = $date;
-            $grouped[$groupKey]['tournament_name'] = $tournamentName; // ✅ tambahkan tournament name
+            $grouped[$groupKey]['tournament_name'] = $tournamentName;
             $grouped[$groupKey]['pools'][$poolName]['pool_name'] = $poolName;
             $grouped[$groupKey]['pools'][$poolName]['rounds'][$roundLabel][] = $matchData;
         }
 
-        // ✅ Transform to array
         $result = [];
         foreach ($grouped as $entry) {
             $pools = [];
@@ -117,13 +117,14 @@ class MatchScheduleController extends Controller
             $result[] = [
                 'arena_name' => $entry['arena_name'],
                 'scheduled_date' => $entry['scheduled_date'],
-                'tournament_name' => $entry['tournament_name'], // ✅ masukkan di response
+                'tournament_name' => $entry['tournament_name'],
                 'pools' => $pools,
             ];
         }
 
         return response()->json(['data' => $result]);
     }
+
 
     
 
