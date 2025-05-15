@@ -24,7 +24,7 @@ class BillingController extends Controller
      * @return \Illuminate\Http\JsonResponse JSON response containing the billings data or an error message.
      */
 
-    public function index()
+    public function index_()
     {
         try {
             $user = auth()->user(); // Mendapatkan user yang sedang login
@@ -44,6 +44,47 @@ class BillingController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
+    public function index(Request $request)
+    {
+        try {
+            $user = auth()->user();
+            $search = $request->input('search', '');
+            $tournamentId = $request->input('tournament_id');
+
+            $query = Billing::query();
+
+            // Optional search
+            if ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('description', 'like', '%' . $search . '%')
+                    ->orWhere('reference', 'like', '%' . $search . '%');
+                });
+            }
+
+            // Optional filter by tournament (kalau applicable)
+            if ($tournamentId) {
+                $query->where('tournament_id', $tournamentId);
+            }
+
+            // Role-based filtering
+            if ($user->group && $user->group->name === 'Owner') {
+                // Lihat semua
+            } elseif ($user->group && $user->group->name === 'Event PIC') {
+                $query->where('tournament_id', $user->tournament_id)
+                    ->orWhere('user_id', $user->id);
+            } else {
+                $query->where('user_id', $user->id);
+            }
+
+            $billings = $query->paginate(10);
+
+            return response()->json($billings, 200);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
 
     public function store(Request $request)
     {
