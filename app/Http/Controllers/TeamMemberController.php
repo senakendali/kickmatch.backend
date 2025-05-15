@@ -105,7 +105,6 @@ class TeamMemberController extends Controller
 
     public function export(Request $request)
     {
-       
         $search = $request->query('search');
         $tournamentId = $request->query('tournament_id');
 
@@ -136,7 +135,7 @@ class TeamMemberController extends Controller
             ['ID', 'Contingent', 'Nama', 'Tempat Lahir', 'Tanggal Lahir', 'Jenis Kelamin', 'Tinggi Badan', 'Berat Badan', 'NIK', 'No. KK', 'Alamat']
         ], null, 'A1');
 
-        // Isi data
+        // Data
         $row = 2;
         foreach ($teamMembers as $member) {
             $sheet->fromArray([
@@ -158,10 +157,14 @@ class TeamMemberController extends Controller
         $writer = new Xlsx($spreadsheet);
         $filename = 'team_members_' . date('Ymd') . '.xlsx';
 
-        return response()->streamDownload(function () use ($writer) {
+        return response()->stream(function () use ($writer) {
             $writer->save('php://output');
-        }, $filename, [
+        }, 200, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'no-cache, must-revalidate',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
         ]);
     }
 

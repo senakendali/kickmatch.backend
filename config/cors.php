@@ -63,7 +63,7 @@ return [
     | Specify the response headers that should be exposed to the browser.
     |
     */
-    'exposed_headers' => [],
+    'exposed_headers' => ['Content-Disposition'],
 
     /*
     |--------------------------------------------------------------------------
