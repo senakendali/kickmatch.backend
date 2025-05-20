@@ -51,6 +51,13 @@ class TournamentController extends Controller
             ? $query->get()
             : $query->paginate(10);
 
+        // Rewrite path document dan image
+       /* $tournaments->getCollection()->transform(function ($tournament) {
+            $tournament->document = $tournament->document ? asset('storage/' . $tournament->document) : null;
+            $tournament->image = $tournament->image ? asset('storage/' . $tournament->image) : null;
+            return $tournament;
+        });*/
+
         return response()->json($tournaments, 200);
     }
 
@@ -274,6 +281,9 @@ class TournamentController extends Controller
                 'tournamentAgeCategories.ageCategory',
             ])->findOrFail($id);
 
+            $document = $tournament->document ? asset('storage/' . $tournament->document) : null;
+            $image = $tournament->image ? asset('storage/' . $tournament->image) : null;
+
             // Transform the data into a structured format
             $data = [
                 'id' => $tournament->id,
@@ -283,8 +293,8 @@ class TournamentController extends Controller
                 'start_date' => $tournament->start_date,
                 'end_date' => $tournament->end_date,
                 'status' => $tournament->status,
-                'image' => asset('banner/' . $tournament->image),
-                'document' => $tournament->document,
+                'image' => $image,
+                'document' => $document,
                 'location' => $tournament->location,
                 'technical_meeting_date' => $tournament->technical_meeting_date,
                 'event_date' => $this->formatEventDate($tournament->start_date, $tournament->end_date), // Example format

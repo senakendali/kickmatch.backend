@@ -134,7 +134,7 @@ class ContingentController extends Controller
         }
     }
 
-    public function checkMyContingentsStatus(){
+    public function checkMyContingentsStatus_(){
         try {
             $user = auth()->user(); // Get the logged-in user
         
@@ -160,6 +160,38 @@ class ContingentController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
+    public function checkMyContingentsStatus()
+    {
+        try {
+            $user = auth()->user(); // Get the logged-in user
+
+            // Eager load group relationship
+            $user->load('group');
+
+            // Ambil semua contingents kalau Owner, kalau bukan filter berdasarkan owner_id
+            if ($user->group && $user->group->name === 'Owner') {
+                $contingents = Contingent::all();
+            } else {
+                $contingents = Contingent::where('owner_id', $user->id)->get();
+            }
+
+            // Tambahkan status is_registered jika ada tournament_id
+            $tournamentId = request()->input('tournament_id');
+            if ($tournamentId) {
+                $contingents->each(function ($contingent) use ($tournamentId) {
+                    $contingent->is_registered = \App\Models\TournamentContingent::where('tournament_id', $tournamentId)
+                        ->where('contingent_id', $contingent->id)
+                        ->exists();
+                });
+            }
+
+            return response()->json($contingents, 200);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+}
+
 
     // Fetch a single contingent by ID
     public function show($id)
