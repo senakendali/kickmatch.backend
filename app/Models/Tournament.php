@@ -70,6 +70,12 @@ class Tournament extends Model
         return $this->hasOne(User::class);
     }
 
+    public function contingents()
+    {
+        return $this->belongsToMany(Contingent::class, 'tournament_contingents');
+    }
+
+
 
 
    

@@ -50,7 +50,7 @@ class Contingent extends Model
     {
         return $this->hasMany(TournamentContingent::class);
     }
-    public function tournaments()
+    public function tournaments_()
     {
         return $this->hasManyThrough(
             Tournament::class,
@@ -61,6 +61,12 @@ class Contingent extends Model
             'tournament_id'  // FK di tournament_contingents
         );
     }
+
+    public function tournaments()
+    {
+        return $this->belongsToMany(Tournament::class, 'tournament_contingents')->withTimestamps();
+    }
+
 
     
 }
