@@ -24,26 +24,7 @@ class BillingController extends Controller
      * @return \Illuminate\Http\JsonResponse JSON response containing the billings data or an error message.
      */
 
-    public function index_()
-    {
-        try {
-            $user = auth()->user(); // Mendapatkan user yang sedang login
-        
-            // Pastikan eager loading untuk menghindari lazy loading
-            $user->load('group'); 
-        
-            if ($user->group && $user->group->name === 'Owner') {
-                $billings = Billing::paginate(10); // Default: tidak ada filter
-                
-            } else {
-                $billings = Billing::where('user_id', $user->id)->paginate(10);
-            }
-        
-            return response()->json($billings, 200);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
-    }
+    
 
     public function index(Request $request)
     {
@@ -51,8 +32,10 @@ class BillingController extends Controller
             $user = auth()->user();
             $search = $request->input('search', '');
             $tournamentId = $request->input('tournament_id');
+            $status = $request->input('status');
 
-            $query = Billing::query();
+            // ✅ Tambahkan eager load tournament
+            $query = Billing::with('tournament');
 
             // Optional search
             if ($search) {
@@ -62,17 +45,24 @@ class BillingController extends Controller
                 });
             }
 
-            // Optional filter by tournament (kalau applicable)
+            // Optional filter by tournament
             if ($tournamentId) {
                 $query->where('tournament_id', $tournamentId);
+            }
+
+            // Optional filter by status
+            if ($status) {
+                $query->where('status', $status);
             }
 
             // Role-based filtering
             if ($user->group && $user->group->name === 'Owner') {
                 // Lihat semua
             } elseif ($user->group && $user->group->name === 'Event PIC') {
-                $query->where('tournament_id', $user->tournament_id)
+                $query->where(function ($q) use ($user) {
+                    $q->where('tournament_id', $user->tournament_id)
                     ->orWhere('user_id', $user->id);
+                });
             } else {
                 $query->where('user_id', $user->id);
             }
@@ -84,6 +74,8 @@ class BillingController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
+
 
 
     public function store(Request $request)
