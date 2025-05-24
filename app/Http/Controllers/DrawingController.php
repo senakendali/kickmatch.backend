@@ -169,7 +169,8 @@ class DrawingController extends Controller
             'match_category_id' => 'required|exists:match_categories,id',
             'age_category_id' => 'required|exists:age_categories,id',
             'category_class_id' => 'nullable|exists:category_classes,id',
-            'match_chart' => 'required|in:2,4,6,8,16,full_prestasi' // Jenis bagan (2, 4, 6, 8)
+            'match_chart' => 'required|in:2,4,6,8,16,full_prestasi',
+            'match_duration' => 'required|in:60,90,120,150,180,210,240,270,300'
         ]);
 
         $tournamentId = $request->tournament_id;
@@ -177,8 +178,9 @@ class DrawingController extends Controller
         $ageCategoryId = $request->age_category_id;
         $categoryClassId = $request->category_class_id;
         $matchChart = $request->match_chart;
+        $matchDuration = $request->match_duration;
 
-        // Hitung total peserta dengan join tournament_participants → team_members
+        // Hitung total peserta yang relevan
         $totalParticipant = TeamMember::where('age_category_id', $ageCategoryId)
             ->when($categoryClassId, function ($query) use ($categoryClassId) {
                 return $query->where('category_class_id', $categoryClassId);
@@ -194,19 +196,28 @@ class DrawingController extends Controller
             return response()->json(['message' => 'Tidak ada peserta yang ditemukan untuk kategori ini.'], 400);
         }
 
-        // Hitung total pool berdasarkan matchChart
+        // 🔁 Reset pool_id peserta yang relevan
+        TournamentParticipant::where('tournament_id', $tournamentId)
+            ->whereIn('team_member_id', function ($query) use ($ageCategoryId, $categoryClassId) {
+                $query->select('id')
+                    ->from('team_members')
+                    ->where('age_category_id', $ageCategoryId)
+                    ->when($categoryClassId, function ($q) use ($categoryClassId) {
+                        return $q->where('category_class_id', $categoryClassId);
+                    });
+            })
+            ->update(['pool_id' => null]);
+
+        // Hitung jumlah pool
         switch ($matchChart) {
             case 'full_prestasi':
             case 2:
-                // Jika menggunakan bagan full prestasi atau matchChart bernilai 2, total pool adalah 1
                 $totalPools = 1;
                 break;
             default:
-                // Hitung jumlah pool yang dibutuhkan berdasarkan matchChart
                 $totalPools = ceil($totalParticipant / $matchChart);
                 break;
         }
-        
 
         // Hapus pool lama
         Pool::where('tournament_id', $tournamentId)
@@ -224,13 +235,13 @@ class DrawingController extends Controller
                 'age_category_id' => $ageCategoryId,
                 'category_class_id' => $categoryClassId,
                 'match_chart' => $matchChart == 'full_prestasi' ? 0 : $matchChart,
+                'match_duration' => $matchDuration,
                 'name' => 'Pool ' . $i,
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
         }
 
-        // Insert pool ke database
         DB::table('pools')->insert($pools);
 
         return response()->json([
@@ -238,8 +249,11 @@ class DrawingController extends Controller
             'total_participant' => $totalParticipant,
             'total_pools' => $totalPools,
             'pools' => $pools,
+            'match_chart' => $matchChart,
+            'match_duration' => $matchDuration
         ]);
     }
+
 
     public function getPools()
     {
@@ -249,6 +263,7 @@ class DrawingController extends Controller
                 'ageCategory:id,name',
                 'categoryClass:id,name,gender,weight_min,weight_max'
             ])
+            ->withCount('matches') // ✅ Tambahkan ini
             ->get()
             ->map(function ($pool) {
                 return [
@@ -264,7 +279,8 @@ class DrawingController extends Controller
                         'weight_max' => $pool->categoryClass->weight_max,
                     ] : null,
                     'name' => $pool->name,
-                    'match_chart' => $pool->match_chart
+                    'match_chart' => $pool->match_chart,
+                    'matches_count' => $pool->matches_count // ✅ Inject ke frontend
                 ];
             });
 
@@ -273,6 +289,7 @@ class DrawingController extends Controller
             'data' => $pools
         ]);
     }
+
 
     public function getMatchList($poolId)
     {

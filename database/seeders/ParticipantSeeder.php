@@ -5,8 +5,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use App\Models\TeamMember;
 use App\Models\Contingent;
-use App\Models\AgeCategory;
-use App\Models\CategoryClass;
+use App\Models\TournamentParticipant;
 use Illuminate\Support\Facades\DB;
 use Faker\Factory as Faker;
 
@@ -15,28 +14,32 @@ class ParticipantSeeder extends Seeder
     public function run()
     {
         $faker = Faker::create();
+        $tournamentId = 2;
 
-        // Ambil data dari tabel yang sudah ada
-        $teamIds = Contingent::pluck('id')->toArray();
-        $ageCategoryIds = AgeCategory::pluck('id')->toArray();
-        $classIds = CategoryClass::pluck('id')->toArray();
+        // Ambil contingent ID yang join di tournament_id = 2
+        $teamIds = DB::table('tournament_contingents')
+            ->where('tournament_id', $tournamentId)
+            ->pluck('contingent_id')
+            ->toArray();
 
-        // Pastikan tabel peserta dikosongkan terlebih dahulu
-        // DB::table('team_members')->truncate();
+        if (empty($teamIds)) {
+            $this->command->warn('Tidak ada kontingen yang join di tournament_id 2.');
+            return;
+        }
 
-        // Buat 70 peserta
-        for ($i = 0; $i < 6; $i++) {
-            TeamMember::create([
+        // Buat 32 peserta dan daftarkan ke tournament_participants
+        for ($i = 0; $i < 32; $i++) {
+            $member = TeamMember::create([
                 'contingent_id' => $faker->randomElement($teamIds),
                 'name' => $faker->name,
-                'birth_place' => $faker->city, 
+                'birth_place' => $faker->city,
                 'birth_date' => $faker->date(),
                 'gender' => $faker->randomElement(['male', 'female']),
-                'body_weight' => 77,
-                'body_height' => 175,
+                'body_weight' => $faker->numberBetween(45, 90),
+                'body_height' => $faker->numberBetween(150, 190),
                 'blood_type' => $faker->randomElement(['A', 'B', 'AB', 'O']),
-                'nik' => $faker->ean13,
-                'family_card_number' => $faker->ean13,
+                'nik' => $faker->numerify('##########'),
+                'family_card_number' => $faker->numerify('##########'),
                 'country_id' => 103,
                 'province_id' => 32,
                 'district_id' => 3217,
@@ -45,11 +48,18 @@ class ParticipantSeeder extends Seeder
                 'address' => $faker->address,
                 'championship_category_id' => 1,
                 'match_category_id' => 1,
-                'age_category_id' => 4, // Ambil dari AgeCategory
+                'age_category_id' => 4,
                 'category_class_id' => 131,
-                'registration_status' => 'approved'
+                'registration_status' => 'approved',
+            ]);
+
+            // Daftarkan ke tournament
+            TournamentParticipant::create([
+                'tournament_id' => $tournamentId,
+                'team_member_id' => $member->id,
             ]);
         }
+
+        $this->command->info('✅ 32 peserta berhasil dibuat untuk tournament_id 2, kelas 131 dan terdaftar di tournament_participants.');
     }
 }
-
