@@ -35,7 +35,7 @@ class PermissionSeeder extends Seeder
             'owner' => [
                 'view dashboard', 'register', 'download', 'view insight', 'view contingent', 'create contingent', 'edit contingent', 'delete contingent',
                 'view member', 'create member', 'edit member', 'delete member',
-                'view payment',  'confirm payment',
+                'view payment', 'create payment', 'edit payment', 'delete payment', 'upload payment struk',  
                 'view classes', 'create classes', 'edit classes', 'delete classes',
                 'view match-clasification', 'create match-clasification', 'edit match-clasification', 'delete match-clasification',
             ],

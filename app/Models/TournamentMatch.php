@@ -28,13 +28,13 @@ class TournamentMatch extends Model
     // Relasi ke Peserta 1
     public function participantOne()
     {
-        return $this->belongsTo(TeamMember::class, 'participant_1');
+        return $this->belongsTo(TeamMember::class, 'participant_1')->with('contingent');
     }
 
     // Relasi ke Peserta 2
     public function participantTwo()
     {
-        return $this->belongsTo(TeamMember::class, 'participant_2');
+        return $this->belongsTo(TeamMember::class, 'participant_2')->with('contingent');
     }
 
     // Relasi ke Pemenang
