@@ -19,6 +19,7 @@ class TeamMemberController extends Controller
             $fetchAll = $request->query('fetch_all', false);
             $is_payment_confirmation = $request->query('is_payment_confirmation', false);
             $tournamentId = $request->query('tournament_id');
+            
 
             $user = auth()->user();
             $search = $request->input('search', '');
@@ -53,6 +54,20 @@ class TeamMemberController extends Controller
                     $q->where('tournament_id', $tournamentId);
                 });
             }
+
+            // 🎯 Filter tambahan
+            if ($request->filled('match_category_id')) {
+                $query->where('match_category_id', $request->match_category_id);
+            }
+
+            if ($request->filled('age_category_id')) {
+                $query->where('age_category_id', $request->age_category_id);
+            }
+
+            if ($request->filled('category_class_id')) {
+                $query->where('category_class_id', $request->category_class_id);
+            }
+
 
             // 🔐 Filter berdasarkan grup user
             if ($user->group && $user->group->name === 'Owner') {
@@ -107,8 +122,15 @@ class TeamMemberController extends Controller
     {
         $search = $request->query('search');
         $tournamentId = $request->query('tournament_id');
+        $matchCategoryId = $request->query('match_category_id');
+        $ageCategoryId = $request->query('age_category_id');
+        $categoryClassId = $request->query('category_class_id');
 
-        $query = TeamMember::with('contingent');
+        $query = TeamMember::with([
+            'contingent.tournamentContingents.tournament',
+            'championshipCategory',
+            'matchCategory'
+        ]);
 
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -125,21 +147,41 @@ class TeamMemberController extends Controller
             });
         }
 
+        if ($matchCategoryId) {
+            $query->where('match_category_id', $matchCategoryId);
+        }
+
+        if ($ageCategoryId) {
+            $query->where('age_category_id', $ageCategoryId);
+        }
+
+        if ($categoryClassId) {
+            $query->where('category_class_id', $categoryClassId);
+        }
+
         $teamMembers = $query->get();
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
-        // Header
+        // ✅ Header
         $sheet->fromArray([
-            ['ID', 'Contingent', 'Nama', 'Tempat Lahir', 'Tanggal Lahir', 'Jenis Kelamin', 'Tinggi Badan', 'Berat Badan', 'NIK', 'No. KK', 'Alamat']
+            ['ID', 'Tournaments', 'Contingent', 'Nama', 'Tempat Lahir', 'Tanggal Lahir', 'Jenis Kelamin', 'Tinggi Badan', 'Berat Badan', 'NIK', 'No. KK', 'Alamat']
         ], null, 'A1');
 
-        // Data
+        // ✅ Data
         $row = 2;
         foreach ($teamMembers as $member) {
+            // Ambil semua nama turnamen dari relasi tournamentContingents
+            $tournamentNames = collect($member->contingent?->tournamentContingents)
+                ->pluck('tournament.name')
+                ->filter()
+                ->unique()
+                ->implode(', ');
+
             $sheet->fromArray([
                 $member->id,
+                $tournamentNames,
                 $member->contingent->name ?? '',
                 $member->name,
                 $member->birth_place,
@@ -155,7 +197,7 @@ class TeamMemberController extends Controller
         }
 
         $writer = new Xlsx($spreadsheet);
-        $filename = 'team_members_' . date('Ymd') . '.xlsx';
+        $filename = 'team_members_' . date('Ymd_His') . '.xlsx';
 
         return response()->stream(function () use ($writer) {
             $writer->save('php://output');
@@ -167,6 +209,7 @@ class TeamMemberController extends Controller
             'Expires' => '0',
         ]);
     }
+
 
 
 

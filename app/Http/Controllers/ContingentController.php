@@ -22,26 +22,26 @@ class ContingentController extends Controller
 
             $query = Contingent::query();
 
-            // Search
+            // 🔍 Search
             if ($search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('pic_name', 'like', '%' . $search . '%')
-                    ->orWhere('pic_email', 'like', '%' . $search . '%')
-                    ->orWhere('pic_phone', 'like', '%' . $search . '%');
+                        ->orWhere('pic_name', 'like', '%' . $search . '%')
+                        ->orWhere('pic_email', 'like', '%' . $search . '%')
+                        ->orWhere('pic_phone', 'like', '%' . $search . '%');
                 });
             }
 
-            // Filter by tournament_id
+            // 🎯 Filter by tournament_id
             if ($tournamentId) {
                 $query->whereHas('tournamentContingents', function ($q) use ($tournamentId) {
                     $q->where('tournament_id', $tournamentId);
                 });
             }
 
-            // Filter berdasarkan role user
+            // 🔐 Filter berdasarkan role user
             if ($user->group && $user->group->name === 'Owner') {
-                // Lihat semua
+                // lihat semua
             } elseif ($user->group && $user->group->name === 'Event PIC') {
                 $query->where(function ($q) use ($user) {
                     $q->whereHas('tournamentContingents', function ($subQ) use ($user) {
@@ -52,16 +52,18 @@ class ContingentController extends Controller
                 $query->where('owner_id', $user->id);
             }
 
+            // 📦 Query with relasi & count
             $contingents = $query
-            ->with(['tournaments' => function ($q) {
-                $q->select('tournaments.id', 'name');
-            }])
-            ->withCount('teamMembers')
-            ->paginate(10);
+                ->with(['tournaments' => function ($q) {
+                    $q->select('tournaments.id', 'name');
+                }])
+                ->withCount('teamMembers')
+                ->paginate(10);
 
-
-            // Transform response untuk tambah tournament_name
+            // 🔁 Transform response untuk format multiple tournament_name
             $transformed = $contingents->getCollection()->transform(function ($item) {
+                $tournamentNames = $item->tournaments->pluck('name')->filter()->implode(', ');
+
                 return [
                     'id' => $item->id,
                     'name' => $item->name,
@@ -69,11 +71,10 @@ class ContingentController extends Controller
                     'pic_email' => $item->pic_email,
                     'pic_phone' => $item->pic_phone,
                     'team_members_count' => $item->team_members_count,
-                    'tournament_name' => $item->tournaments->first()?->name ?? null,
+                    'tournament_name' => $tournamentNames,
                 ];
             });
 
-            // Replace collection
             $contingents->setCollection($transformed);
 
             return response()->json($contingents);
@@ -398,70 +399,77 @@ class ContingentController extends Controller
     }
 
     public function export(Request $request)
-    {
-        $search = $request->query('search');
-        $tournamentId = $request->query('tournament_id');
+{
+    $search = $request->query('search');
+    $tournamentId = $request->query('tournament_id');
 
-        $query = Contingent::query();
+    $query = Contingent::query();
 
-        if ($search) {
-            $query->where('name', 'like', "%{$search}%");
-        }
-
-        if ($tournamentId) {
-            $query->whereHas('tournamentContingents', function ($q) use ($tournamentId) {
-                $q->where('tournament_id', $tournamentId);
-            });
-        }
-
-        $contingents = $query
-            ->with(['tournaments', 'country', 'province', 'district', 'teamMembers'])
-            ->get();
-
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-
-        // ✅ Header
-        $sheet->fromArray([
-            [
-                'ID', 'Tournament', 'Contingent Name', 'PIC Name', 'PIC Phone', 'PIC Email',
-                'Address', 'Country', 'Province', 'City', 'Total Team Members'
-            ]
-        ], null, 'A1');
-
-        // ✅ Data
-        $row = 2;
-        foreach ($contingents as $contingent) {
-            $tournamentNames = $contingent->tournaments->pluck('name')->implode(', ');
-
-            $sheet->fromArray([
-                $contingent->id,
-                $tournamentNames,
-                $contingent->name,
-                $contingent->pic_name,
-                $contingent->pic_phone,
-                $contingent->pic_email,
-                $contingent->address,
-                optional($contingent->country)->name,
-                optional($contingent->province)->name,
-                optional($contingent->district)->name,
-                $contingent->teamMembers->count(),
-            ], null, "A{$row}");
-            $row++;
-        }
-
-        $writer = new Xlsx($spreadsheet);
-        $filename = 'contingents_' . date('Ymd') . '.xlsx';
-
-        return response()->stream(function () use ($writer) {
-            $writer->save('php://output');
-        }, 200, [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-            'Cache-Control' => 'no-cache, must-revalidate',
-            'Pragma' => 'no-cache',
-            'Expires' => '0',
-        ]);
+    if ($search) {
+        $query->where('name', 'like', "%{$search}%");
     }
+
+    if ($tournamentId) {
+        $query->whereHas('tournamentContingents', function ($q) use ($tournamentId) {
+            $q->where('tournament_id', $tournamentId);
+        });
+    }
+
+    $contingents = $query
+        ->with([
+            'tournaments:id,name',
+            'country:id,country_name',
+            'province:id,name',
+            'district:id,name',
+            'teamMembers:id,contingent_id'
+        ])
+        ->get();
+
+    $spreadsheet = new Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+
+    // ✅ Header
+    $sheet->fromArray([
+        [
+            'ID', 'Tournaments', 'Contingent Name', 'PIC Name', 'PIC Phone', 'PIC Email',
+            'Address', 'Country', 'Province', 'City', 'Total Team Members'
+        ]
+    ], null, 'A1');
+
+    // ✅ Data
+    $row = 2;
+    foreach ($contingents as $contingent) {
+        $tournamentNames = $contingent->tournaments->pluck('name')->implode(', ');
+
+        $sheet->fromArray([
+            $contingent->id,
+            $tournamentNames,
+            $contingent->name,
+            $contingent->pic_name,
+            $contingent->pic_phone,
+            $contingent->pic_email,
+            $contingent->address,
+            optional($contingent->country)->country_name,
+            optional($contingent->province)->name,
+            optional($contingent->district)->name,
+            $contingent->teamMembers->count(),
+        ], null, "A{$row}");
+        $row++;
+    }
+
+    $writer = new Xlsx($spreadsheet);
+    $filename = 'contingents_' . date('Ymd') . '.xlsx';
+
+    return response()->stream(function () use ($writer) {
+        $writer->save('php://output');
+    }, 200, [
+        'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        'Cache-Control' => 'no-cache, must-revalidate',
+        'Pragma' => 'no-cache',
+        'Expires' => '0',
+    ]);
+}
+
 }
 

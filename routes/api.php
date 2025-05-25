@@ -222,6 +222,11 @@ Route::post('/update-tanding-match-status', [SyncController::class, 'updateTandi
 
 Route::post('/update-next-match-slot', [SyncController::class, 'updateNextMatchSlot']);
 
+Route::get('/fetch-match-categories', [MatchCategoryController::class, 'getByTournament']);
+Route::get('/fetch-age-categories', [AgeCategoryController::class, 'getByTournament']);
+Route::get('/fetch-category-classes', [CategoryClassController::class, 'getByTournament']);
+
+
 
 Route::post('/login', [AuthController::class, 'login']);
 

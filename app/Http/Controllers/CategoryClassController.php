@@ -245,4 +245,18 @@ class CategoryClassController extends Controller
             return response()->json(['error' => 'Failed to delete category class', 'message' => $e->getMessage()], 500);
         }
     }
+
+    public function getByTournament(Request $request)
+    {
+        $ageCategoryId = $request->query('age_category_id');
+
+        $query = CategoryClass::query();
+
+        if ($ageCategoryId) {
+            $query->where('age_category_id', $ageCategoryId);
+        }
+
+        return response()->json($query->get());
+    }
+
 }

@@ -13,8 +13,8 @@ class PermissionSeeder extends Seeder
         // Define pages and permissions
         $pages = [
             'dashboard' => ['view dashboard', 'register', 'download', 'view insight'],
-            'contingent' => ['view contingent', 'create contingent', 'edit contingent', 'delete contingent'],
-            'member'    => ['view member', 'create member', 'edit member', 'delete member'],
+            'contingent' => ['export contingent', 'view contingent', 'create contingent', 'edit contingent', 'delete contingent'],
+            'member'    => ['export member', 'view member', 'create member', 'edit member', 'delete member'],
             'payment'   => ['view payment', 'create payment', 'edit payment', 'delete payment', 'upload payment struk', 'confirm payment'],
             'classes'   => ['view classes', 'create classes', 'edit classes', 'delete classes'],
             'match-clasification' => ['view match-clasification', 'create match-clasification', 'edit match-clasification', 'delete match-clasification'],
@@ -33,15 +33,15 @@ class PermissionSeeder extends Seeder
         // Define roles and their corresponding permissions
         $roles = [
             'owner' => [
-                'view dashboard', 'register', 'download', 'view insight', 'view contingent', 'create contingent', 'edit contingent', 'delete contingent',
-                'view member', 'create member', 'edit member', 'delete member',
+                'view dashboard', 'register', 'download', 'view insight', 'export contingent', 'view contingent', 'create contingent', 'edit contingent', 'delete contingent',
+                'view member', 'export member', 'create member', 'edit member', 'delete member',
                 'view payment',  'confirm payment', 'create payment', 'edit payment', 'delete payment', 'upload payment struk',  
                 'view classes', 'create classes', 'edit classes', 'delete classes',
                 'view match-clasification', 'create match-clasification', 'edit match-clasification', 'delete match-clasification',
             ],
             'admin' => [
-                'view dashboard', 'register', 'download', 'view insight', 'view contingent', 'create contingent', 'edit contingent', 'delete contingent',
-                'view member', 'create member', 'edit member', 'delete member',
+                'view dashboard', 'register', 'download', 'view insight', 'export contingent', 'view contingent', 'create contingent', 'edit contingent', 'delete contingent',
+                'view member', 'export member', 'create member', 'edit member', 'delete member',
                 'view payment', 'confirm payment', 'create payment', 'edit payment', 'delete payment', 'upload payment struk', 
                 'view classes', 'create classes', 'edit classes', 'delete classes',
                 'view match-clasification', 'create match-clasification', 'edit match-clasification', 'delete match-clasification',
