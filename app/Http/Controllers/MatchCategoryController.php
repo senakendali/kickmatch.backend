@@ -29,12 +29,13 @@ class MatchCategoryController extends Controller
             $query->whereIn('id', function ($sub) use ($tournamentId) {
                 $sub->select('match_category_id')
                     ->from('tournament_categories')
-                    ->where('championship_category_id', $tournamentId);
+                    ->where('tournament_id', $tournamentId); // ✅ perbaikan disini
             });
         }
 
         return response()->json($query->get());
     }
+
 
     
 }
