@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\TournamentMatch;
+use App\Models\SeniMatch;
 use Illuminate\Http\Request;
 
 class SyncController extends Controller
@@ -53,16 +54,19 @@ class SyncController extends Controller
                 'class' => $match->pool->categoryClass->name,
                 'round_level' => $match->round,
                 'match_number' => $match->match_number,
+                'match_duration' => $match->pool->match_duration,
 
                 // Cek apakah participant_1 ada, jika tidak set sebagai 'TBD'
-                'red_id' => $match->participantOne ? $match->participantOne->id : null,
-                'red_name' => $match->participantOne ? $match->participantOne->name : 'TBD',
-                'red_contingent' => $match->participantOne ? $match->participantOne->contingent?->name : 'TBD',
+                'blue_id' => $match->participantOne ? $match->participantOne->id : null,
+                'blue_name' => $match->participantOne ? $match->participantOne->name : 'TBD',
+                'blue_contingent' => $match->participantOne ? $match->participantOne->contingent?->name : 'TBD',
+
 
                 // Cek apakah participant_2 ada, jika tidak set sebagai 'TBD'
-                'blue_id' => $match->participantTwo ? $match->participantTwo->id : null,
-                'blue_name' => $match->participantTwo ? $match->participantTwo->name : 'TBD',
-                'blue_contingent' => $match->participantTwo ? $match->participantTwo->contingent?->name : 'TBD',
+                'red_id' => $match->participantTwo ? $match->participantTwo->id : null,
+                'red_name' => $match->participantTwo ? $match->participantTwo->name : 'TBD',
+                'red_contingent' => $match->participantTwo ? $match->participantTwo->contingent?->name : 'TBD',
+
 
                 // Menambahkan parent match id, jika tidak ada maka null
                 'parent_match_red_id' => $parents[0] ?? null,
@@ -72,5 +76,128 @@ class SyncController extends Controller
 
         return response()->json($result);
     }
+
+   public function seniMatches(Request $request)
+    {
+        $tournamentSlug = $request->query('tournament');
+
+        $matches = SeniMatch::with([
+                'pool.tournament',
+                'pool.ageCategory',
+                'scheduleDetail.schedule.arena',
+                'contingent',
+            ])
+            ->join('match_schedule_details', 'seni_matches.id', '=', 'match_schedule_details.seni_match_id')
+            ->join('match_schedules', 'match_schedule_details.match_schedule_id', '=', 'match_schedules.id')
+            ->join('seni_pools', 'seni_matches.pool_id', '=', 'seni_pools.id')
+            ->join('tournaments', 'seni_pools.tournament_id', '=', 'tournaments.id')
+            ->where('tournaments.slug', $tournamentSlug)
+            ->orderBy('match_schedule_details.order')
+            ->select('seni_matches.*')
+            ->get();
+
+        $result = $matches->map(function ($match) {
+            // Ambil nama peserta langsung dari kolom team_member_X
+            $nama1 = \App\Models\TeamMember::find($match->team_member_1)?->name;
+            $nama2 = \App\Models\TeamMember::find($match->team_member_2)?->name;
+            $nama3 = \App\Models\TeamMember::find($match->team_member_3)?->name;
+
+            return [
+                'remote_match_id' => $match->id,
+                'remote_contingent_id' => $match->contingent_id,
+                'remote_team_member_1' => $match->team_member_1,
+                'remote_team_member_2' => $match->team_member_2,
+                'remote_team_member_3' => $match->team_member_3,
+
+                'tournament_name' => $match->pool->tournament->name,
+                'arena_name' => $match->scheduleDetail?->schedule?->arena?->name,
+                'match_date' => $match->scheduleDetail?->schedule?->scheduled_date,
+                'match_time' => $match->scheduleDetail?->schedule?->start_time,
+                'pool_name' => $match->pool->name,
+                'match_order' => $match->match_order,
+
+                'category' => match ($match->match_category_id) {
+                    2 => 'Tunggal',
+                    3 => 'Ganda',
+                    4 => 'Regu',
+                    5 => 'Solo Kreatif',
+                    default => 'Unknown',
+                },
+                'match_type' => match ($match->match_category_id) {
+                    2 => 'seni_tunggal',
+                    3 => 'seni_ganda',
+                    4 => 'seni_regu',
+                    5 => 'solo_kreatif',
+                    default => 'unknown',
+                },
+                'gender' => $match->gender,
+                'contingent_name' => $match->contingent?->name ?? 'TBD',
+
+                'participant_1' => $nama1,
+                'participant_2' => $nama2,
+                'participant_3' => $nama3,
+
+                'age_category' => $match->pool->ageCategory->name,
+                'final_score' => null,
+            ];
+        });
+
+        return response()->json($result);
+    }
+
+    public function updateTandingMatchStatus(Request $request)
+    {
+        $validated = $request->validate([
+            'remote_match_id' => 'required|integer',
+            'status' => 'required|in:not_started,in_progress,finished',
+            'participant_1_score' => 'nullable|numeric',
+            'participant_2_score' => 'nullable|numeric',
+            'winner_id' => 'nullable|integer',
+        ]);
+
+        TournamentMatch::where('id', $validated['remote_match_id'])
+            ->update([
+                'status' => $validated['status'],
+                'participant_1_score' => $validated['participant_1_score'] ?? 0,
+                'participant_2_score' => $validated['participant_2_score'] ?? 0,
+                'winner_id' => $validated['winner_id'] ?? null,
+            ]);
+
+        return response()->json(['message' => 'Status updated']);
+    }
+
+    public function updateNextMatchSlot(Request $request)
+    {
+        $request->validate([
+            'remote_match_id' => 'required|integer|exists:tournament_matches,id',
+            'slot' => 'required|in:1,2', // 1 = biru, 2 = merah
+            'winner_id' => 'required|integer',
+        ]);
+
+        $match = TournamentMatch::findOrFail($request->remote_match_id);
+
+        if ($request->slot == 1) {
+            // 🟦 Slot biru
+            $match->participant_1 = $request->winner_id;
+        } elseif ($request->slot == 2) {
+            // 🔴 Slot merah
+            $match->participant_2 = $request->winner_id;
+        }
+
+        $match->save();
+
+        return response()->json([
+            'message' => 'Peserta berhasil dimasukkan ke pertandingan selanjutnya.',
+            'match_id' => $match->id,
+            'slot' => $request->slot,
+            'participant_id' => $request->winner_id,
+        ]);
+    }
+
+
+
+
+
+
 
 }

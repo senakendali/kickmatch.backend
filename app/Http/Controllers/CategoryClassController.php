@@ -67,9 +67,6 @@ class CategoryClassController extends Controller
         return response()->json($result);
     }
 
-
-    
-
     public function getClassOnTeamMember_(Request $request)
     {
         // Get the age_category_id & tournament_id from the query parameters

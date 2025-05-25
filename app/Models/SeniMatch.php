@@ -62,5 +62,10 @@ class SeniMatch extends Model
         return collect([$this->teamMember1, $this->teamMember2, $this->teamMember3])->filter();
     }
 
+     public function scheduleDetail()
+    {
+        return $this->hasOne(MatchScheduleDetail::class, 'tournament_match_id');
+    }
+
    
 }
