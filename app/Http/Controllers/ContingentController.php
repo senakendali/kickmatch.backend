@@ -380,5 +380,19 @@ class ContingentController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
+     public function getByTournament($tournament_id)
+    {
+        $contingents = Contingent::whereIn('id', function ($query) use ($tournament_id) {
+                $query->select('contingent_id')
+                      ->from('tournament_contingents')
+                      ->where('tournament_id', $tournament_id);
+            })
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json($contingents);
+    }
 }
 

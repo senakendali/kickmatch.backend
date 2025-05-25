@@ -118,6 +118,8 @@ Route::apiResource('navigation-menus', NavigationMenuController::class);
 Route::middleware('auth:sanctum')->get('contingents/fetch-all', [ContingentController::class, 'fetchAll']);
 Route::middleware('auth:sanctum')->get('contingents/my-contingents', [ContingentController::class, 'checkMyContingentsStatus']);
 Route::middleware('auth:sanctum')->apiResource('contingents', ContingentController::class);
+Route::get('/contingents/by-tournament/{tournament_id}', [ContingentController::class, 'getByTournament']);
+
 
 
 //Team Members
