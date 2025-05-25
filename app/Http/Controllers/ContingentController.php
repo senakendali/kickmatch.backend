@@ -7,6 +7,8 @@ use App\Models\TournamentContingent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ContingentController extends Controller
 {
@@ -393,6 +395,73 @@ class ContingentController extends Controller
             ->get();
 
         return response()->json($contingents);
+    }
+
+    public function export(Request $request)
+    {
+        $search = $request->query('search');
+        $tournamentId = $request->query('tournament_id');
+
+        $query = Contingent::query();
+
+        if ($search) {
+            $query->where('name', 'like', "%{$search}%");
+        }
+
+        if ($tournamentId) {
+            $query->whereHas('tournamentContingents', function ($q) use ($tournamentId) {
+                $q->where('tournament_id', $tournamentId);
+            });
+        }
+
+        $contingents = $query
+            ->with(['tournaments', 'country', 'province', 'district', 'teamMembers'])
+            ->get();
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
+        // ✅ Header
+        $sheet->fromArray([
+            [
+                'ID', 'Tournament', 'Contingent Name', 'PIC Name', 'PIC Phone', 'PIC Email',
+                'Address', 'Country', 'Province', 'City', 'Total Team Members'
+            ]
+        ], null, 'A1');
+
+        // ✅ Data
+        $row = 2;
+        foreach ($contingents as $contingent) {
+            $tournamentNames = $contingent->tournaments->pluck('name')->implode(', ');
+
+            $sheet->fromArray([
+                $contingent->id,
+                $tournamentNames,
+                $contingent->name,
+                $contingent->pic_name,
+                $contingent->pic_phone,
+                $contingent->pic_email,
+                $contingent->address,
+                optional($contingent->country)->name,
+                optional($contingent->province)->name,
+                optional($contingent->district)->name,
+                $contingent->teamMembers->count(),
+            ], null, "A{$row}");
+            $row++;
+        }
+
+        $writer = new Xlsx($spreadsheet);
+        $filename = 'contingents_' . date('Ymd') . '.xlsx';
+
+        return response()->stream(function () use ($writer) {
+            $writer->save('php://output');
+        }, 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'no-cache, must-revalidate',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+        ]);
     }
 }
 

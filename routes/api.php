@@ -37,6 +37,7 @@ use App\Http\Controllers\SeniMatchController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', [TeamMemberController::class, 'export']);
+Route::get('/contingents/export', [ContingentController::class, 'export']);
 
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
