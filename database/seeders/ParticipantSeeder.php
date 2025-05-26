@@ -28,7 +28,7 @@ class ParticipantSeeder extends Seeder
         }
 
         // Buat 32 peserta dan daftarkan ke tournament_participants
-        for ($i = 0; $i < 32; $i++) {
+        for ($i = 0; $i < 11; $i++) {
             $member = TeamMember::create([
                 'contingent_id' => $faker->randomElement($teamIds),
                 'name' => $faker->name,
