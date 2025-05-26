@@ -32,7 +32,9 @@ class TeamMemberController extends Controller
             $query = TeamMember::with([
                 'contingent.tournamentContingents.tournament', // untuk tournament_name
                 'championshipCategory',
-                'matchCategory.tournamentCategories'
+                'matchCategory.tournamentCategories',
+                'ageCategory',            // 👈 Tambahan
+                'categoryClass', 
             ]);
 
             // 🔍 Search
