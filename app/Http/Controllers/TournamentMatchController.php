@@ -732,21 +732,26 @@ private function generateBracketForTen($poolId, $participants)
         'created_at' => $now, 'updated_at' => $now,
     ]);
 
-    // ROUND 2 - 4 MATCH
+    // ROUND 2 - 4 MATCH (P1 langsung di M7, P10 langsung di M9)
     $matchIds[] = DB::table('tournament_matches')->insertGetId([
         'pool_id' => $poolId, 'round' => 2, 'match_number' => $matchNumber++,
+        'participant_1' => $selected[0]->id, // winner M1 (bye)
+        'participant_2' => null,
         'created_at' => $now, 'updated_at' => $now,
     ]);
     $matchIds[] = DB::table('tournament_matches')->insertGetId([
         'pool_id' => $poolId, 'round' => 2, 'match_number' => $matchNumber++,
+        'participant_1' => null, 'participant_2' => null,
         'created_at' => $now, 'updated_at' => $now,
     ]);
     $matchIds[] = DB::table('tournament_matches')->insertGetId([
         'pool_id' => $poolId, 'round' => 2, 'match_number' => $matchNumber++,
+        'participant_1' => null, 'participant_2' => $selected[9]->id, // winner M6 (bye)
         'created_at' => $now, 'updated_at' => $now,
     ]);
     $matchIds[] = DB::table('tournament_matches')->insertGetId([
         'pool_id' => $poolId, 'round' => 2, 'match_number' => $matchNumber++,
+        'participant_1' => null, 'participant_2' => null,
         'created_at' => $now, 'updated_at' => $now,
     ]);
 
@@ -766,7 +771,7 @@ private function generateBracketForTen($poolId, $participants)
         'created_at' => $now, 'updated_at' => $now,
     ]);
 
-    // NEXT MATCH RELATION (manual mapping sesuai struktur)
+    // RELASI NEXT MATCH
     $map = [
         0 => 6, // M1 -> M7
         1 => 6, // M2 -> M7
@@ -778,8 +783,8 @@ private function generateBracketForTen($poolId, $participants)
         7 => 10, // M8 -> M11
         8 => 11, // M9 -> M12
         9 => 11, // M10 -> M12
-        10 => 12, // M11 -> Final
-        11 => 12, // M12 -> Final
+        10 => 12, // M11 -> FINAL
+        11 => 12, // M12 -> FINAL
     ];
 
     foreach ($map as $from => $to) {
@@ -798,6 +803,7 @@ private function generateBracketForTen($poolId, $participants)
         'rounds' => $inserted,
     ]);
 }
+
 
 
 
