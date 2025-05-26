@@ -13,7 +13,7 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class TeamMemberController extends Controller
 {
-    public function index(Request $request)
+    public function index__(Request $request)
     {
         try {
             $fetchAll = $request->query('fetch_all', false);
@@ -123,6 +123,121 @@ class TeamMemberController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
+    public function index(Request $request)
+{
+    try {
+        $fetchAll = filter_var($request->query('fetch_all', false), FILTER_VALIDATE_BOOLEAN);
+        $is_payment_confirmation = filter_var($request->query('is_payment_confirmation', false), FILTER_VALIDATE_BOOLEAN);
+        $tournamentId = $request->query('tournament_id');
+
+        // ⛔ Paksa fetchAll jadi false jika sedang konfirmasi pembayaran
+        if ($is_payment_confirmation) {
+            $fetchAll = false;
+        }
+
+        $user = auth()->user();
+        $search = $request->input('search', '');
+
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        // 🔗 Query awal + eager loading
+        $query = TeamMember::with([
+            'contingent.tournamentContingents.tournament',
+            'championshipCategory',
+            'matchCategory.tournamentCategories',
+            'ageCategory',
+            'categoryClass',
+        ]);
+
+        // 🔍 Search
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%$search%")
+                    ->orWhereHas('contingent', function ($qc) use ($search) {
+                        $qc->where('name', 'like', "%$search%");
+                    })
+                    ->orWhereHas('matchCategory', function ($qm) use ($search) {
+                        $qm->where('name', 'like', "%$search%");
+                    });
+            });
+        }
+
+        // 🎯 Filter by tournament
+        if ($tournamentId) {
+            $query->whereHas('contingent.tournamentContingents', function ($q) use ($tournamentId) {
+                $q->where('tournament_id', $tournamentId);
+            });
+        }
+
+        // 🎯 Filter tambahan
+        if ($request->filled('match_category_id')) {
+            $query->where('match_category_id', $request->match_category_id);
+        }
+
+        if ($request->filled('age_category_id')) {
+            $query->where('age_category_id', $request->age_category_id);
+        }
+
+        if ($request->filled('category_class_id')) {
+            $query->where('category_class_id', $request->category_class_id);
+        }
+
+        // 🔐 Filter berdasarkan grup user
+        if ($user->group && $user->group->name === 'Owner') {
+            if ($is_payment_confirmation) {
+                // Hanya tampilkan yang ada di billing saat konfirmasi
+                $query->whereHas('billingDetails');
+            }
+            // Kalau bukan konfirmasi, tetap lihat semua
+        } elseif ($user->group && $user->group->name === 'Event PIC') {
+            $query->where(function ($q) use ($user) {
+                $q->whereHas('contingent.tournamentContingents', function ($subQ) use ($user) {
+                    $subQ->where('tournament_id', $user->tournament_id);
+                })->orWhereHas('contingent', function ($subQ) use ($user) {
+                    $subQ->where('owner_id', $user->id);
+                });
+            });
+        } else {
+            $query->whereHas('contingent', function ($q) use ($user) {
+                $q->where('owner_id', $user->id);
+            });
+        }
+
+        // 💰 Filter billing confirmation (backup, boleh dihapus karena udah di atas)
+        if ($is_payment_confirmation) {
+            $query->whereHas('billingDetails');
+        }
+
+        // 📦 Ambil data
+        $members = $fetchAll ? $query->get() : $query->paginate(10);
+
+        // 🔁 Transform untuk inject tournament_name & billing flag
+        $transform = function ($member) {
+            $tournamentName = optional(
+                $member->contingent?->tournamentContingents->first()?->tournament
+            )->name;
+
+            $member->tournament_name = $tournamentName;
+            $member->exists_in_billing_details = BillingDetail::where('team_member_id', $member->id)->exists();
+
+            return $member;
+        };
+
+        if ($fetchAll) {
+            $members = $members->map($transform);
+        } else {
+            $members->setCollection($members->getCollection()->map($transform));
+        }
+
+        return response()->json($members, 200);
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+}
+
 
     public function export(Request $request)
     {
