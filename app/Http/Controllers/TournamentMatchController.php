@@ -527,6 +527,20 @@ private function generateFullPrestasiBracket($poolId, $participants)
         return response()->json(['message' => 'Pool tidak memiliki kelas atau kategori pertandingan.'], 400);
     }
 
+    // Ambil peserta eligible
+    $eligibleParticipants = DB::table('tournament_participants')
+        ->join('team_members', 'tournament_participants.team_member_id', '=', 'team_members.id')
+        ->where('tournament_participants.tournament_id', $tournamentId)
+        ->where('team_members.category_class_id', $desiredClassId)
+        ->where('team_members.match_category_id', $desiredMatchCategoryId)
+        ->select('tournament_participants.id as tp_id', 'team_members.id as id', 'team_members.name')
+        ->get();
+
+    if ($eligibleParticipants->count() >= 6) {
+        return $this->generateBracketForSix($poolId, $eligibleParticipants);
+    }
+
+    // lanjut pakai skema general seperti sebelumnya
     // Kosongkan pool_id peserta dari pool ini dan yang cocok class & kategori
     DB::table('tournament_participants')
         ->where('pool_id', $poolId)
@@ -538,19 +552,6 @@ private function generateFullPrestasiBracket($poolId, $participants)
         ->where('team_members.category_class_id', $desiredClassId)
         ->where('team_members.match_category_id', $desiredMatchCategoryId)
         ->update(['tournament_participants.pool_id' => null]);
-
-    $eligibleParticipants = DB::table('tournament_participants')
-        ->join('team_members', 'tournament_participants.team_member_id', '=', 'team_members.id')
-        ->where('tournament_participants.tournament_id', $tournamentId)
-        ->whereNull('tournament_participants.pool_id')
-        ->where('team_members.category_class_id', $desiredClassId)
-        ->where('team_members.match_category_id', $desiredMatchCategoryId)
-        ->select('tournament_participants.id as tp_id', 'team_members.id as team_member_id', 'team_members.name as name')
-        ->get();
-
-    if ($eligibleParticipants->isEmpty()) {
-        return response()->json(['message' => 'Tidak ada peserta yang cocok.'], 404);
-    }
 
     $shuffled = $eligibleParticipants->shuffle()->values();
     $participantIdsToUpdate = $shuffled->pluck('tp_id');
@@ -564,14 +565,7 @@ private function generateFullPrestasiBracket($poolId, $participants)
         ->whereIn('id', $participantIdsToUpdate)
         ->update(['pool_id' => $poolId]);
 
-    $participantIds = DB::table('tournament_participants')
-        ->join('team_members', 'tournament_participants.team_member_id', '=', 'team_members.id')
-        ->where('tournament_participants.pool_id', $poolId)
-        ->select('team_members.id')
-        ->pluck('team_members.id')
-        ->shuffle()
-        ->values();
-
+    $participantIds = $shuffled->pluck('id')->shuffle()->values();
     $total = $participantIds->count();
     $bracketSize = pow(2, ceil(log($total, 2)));
     $rounds = ceil(log($bracketSize, 2));
@@ -596,20 +590,12 @@ private function generateFullPrestasiBracket($poolId, $participants)
         }
     }
 
-    // Isi peserta ke round 1 sesuai jumlah peserta, tidak semua match diisi
-    $filledCount = 0;
     $i = 0;
     foreach ($matchRefs as $number => &$match) {
         if ($match['round'] !== 1) continue;
-        if ($filledCount >= $total) break;
 
         $match['participant_1'] = $participantIds[$i++] ?? null;
-        $filledCount++;
-
-        if ($filledCount >= $total) break;
-
         $match['participant_2'] = $participantIds[$i++] ?? null;
-        $filledCount++;
 
         if ($match['participant_1'] && !$match['participant_2']) {
             $match['winner_id'] = $match['participant_1'];
@@ -619,14 +605,12 @@ private function generateFullPrestasiBracket($poolId, $participants)
     }
     unset($match);
 
-    // Hapus match kosong (bye vs bye)
     foreach ($matchRefs as $number => $match) {
         if ($match['round'] === 1 && is_null($match['participant_1']) && is_null($match['participant_2'])) {
             unset($matchRefs[$number]);
         }
     }
 
-    // Link antar match
     $roundGrouped = collect($matchRefs)->groupBy('round');
     foreach ($roundGrouped as $r => $group) {
         if (isset($roundGrouped[$r + 1])) {
@@ -637,7 +621,6 @@ private function generateFullPrestasiBracket($poolId, $participants)
         }
     }
 
-    // Simpan match
     $matchesToInsert = array_map(function ($match) {
         unset($match['next_match_id']);
         return Arr::except($match, ['next_match_number']);
@@ -645,7 +628,6 @@ private function generateFullPrestasiBracket($poolId, $participants)
 
     DB::table('tournament_matches')->insert($matchesToInsert);
 
-    // Update next_match_id
     $matchMap = TournamentMatch::where('pool_id', $poolId)->get()->keyBy('match_number');
 
     foreach ($matchRefs as $matchData) {
@@ -676,6 +658,7 @@ private function generateFullPrestasiBracket($poolId, $participants)
         'rounds_generated' => $rounds,
     ]);
 }
+
 
 
   private function generateFullPrestasiBracket_keep($poolId, $participants)
