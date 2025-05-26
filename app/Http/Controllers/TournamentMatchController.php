@@ -536,7 +536,7 @@ private function generateFullPrestasiBracket($poolId, $participants)
         ->select('tournament_participants.id as tp_id', 'team_members.id as id', 'team_members.name')
         ->get();
 
-    if ($eligibleParticipants->count() >= 6) {
+    if ($eligibleParticipants->count() == 6) {
         return $this->generateBracketForSix($poolId, $eligibleParticipants);
     }
 
