@@ -509,8 +509,472 @@ class TournamentMatchController extends Controller
         ]);
     }
 
-    
+   
 private function generateFullPrestasiBracket($poolId, $participants)
+{
+    TournamentMatch::where('pool_id', $poolId)->delete();
+
+    $pool = Pool::with('tournament')->find($poolId);
+    if (!$pool) {
+        return response()->json(['message' => 'Pool tidak ditemukan.'], 404);
+    }
+
+    $tournamentId = $pool->tournament_id;
+    $desiredClassId = $pool->category_class_id;
+    $desiredMatchCategoryId = $pool->match_category_id;
+
+    if (!$desiredClassId || !$desiredMatchCategoryId) {
+        return response()->json(['message' => 'Pool tidak memiliki kelas atau kategori pertandingan.'], 400);
+    }
+
+    $eligibleParticipants = DB::table('tournament_participants')
+        ->join('team_members', 'tournament_participants.team_member_id', '=', 'team_members.id')
+        ->where('tournament_participants.tournament_id', $tournamentId)
+        ->where('team_members.category_class_id', $desiredClassId)
+        ->where('team_members.match_category_id', $desiredMatchCategoryId)
+        ->select('tournament_participants.id as tp_id', 'team_members.id as id', 'team_members.name')
+        ->get();
+
+    if ($eligibleParticipants->count() === 6) {
+        return $this->generateBracketForSix($poolId, $eligibleParticipants);
+    }
+
+    if ($eligibleParticipants->count() === 10) {
+        return $this->generateBracketForTen($poolId, $eligibleParticipants);
+    }
+
+    // lanjut pakai skema general seperti sebelumnya
+    DB::table('tournament_participants')
+        ->where('pool_id', $poolId)
+        ->update(['pool_id' => null]);
+
+    DB::table('tournament_participants')
+        ->join('team_members', 'tournament_participants.team_member_id', '=', 'team_members.id')
+        ->where('tournament_participants.tournament_id', $tournamentId)
+        ->where('team_members.category_class_id', $desiredClassId)
+        ->where('team_members.match_category_id', $desiredMatchCategoryId)
+        ->update(['tournament_participants.pool_id' => null]);
+
+    $shuffled = $eligibleParticipants->shuffle()->values();
+    $participantIdsToUpdate = $shuffled->pluck('tp_id');
+
+    \Log::info("\u2705 Peserta masuk pool {$poolId}", [
+        'total' => $participantIdsToUpdate->count(),
+        'nama' => $shuffled->pluck('name'),
+    ]);
+
+    DB::table('tournament_participants')
+        ->whereIn('id', $participantIdsToUpdate)
+        ->update(['pool_id' => $poolId]);
+
+    $participantIds = $shuffled->pluck('id')->shuffle()->values();
+    $total = $participantIds->count();
+    $bracketSize = pow(2, ceil(log($total, 2)));
+    $rounds = ceil(log($bracketSize, 2));
+    $matchNumber = 1;
+    $matchRefs = [];
+
+    for ($round = 1; $round <= $rounds; $round++) {
+        $numMatches = $bracketSize / pow(2, $round);
+        for ($i = 0; $i < $numMatches; $i++) {
+            $matchRefs[$matchNumber] = [
+                'pool_id' => $poolId,
+                'round' => $round,
+                'match_number' => $matchNumber,
+                'participant_1' => null,
+                'participant_2' => null,
+                'winner_id' => null,
+                'next_match_id' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+            $matchNumber++;
+        }
+    }
+
+    $i = 0;
+    foreach ($matchRefs as $number => &$match) {
+        if ($match['round'] !== 1) continue;
+
+        $match['participant_1'] = $participantIds[$i++] ?? null;
+        $match['participant_2'] = $participantIds[$i++] ?? null;
+
+        if ($match['participant_1'] && !$match['participant_2']) {
+            $match['winner_id'] = $match['participant_1'];
+        } elseif (!$match['participant_1'] && $match['participant_2']) {
+            $match['winner_id'] = $match['participant_2'];
+        }
+    }
+    unset($match);
+
+    foreach ($matchRefs as $number => $match) {
+        if ($match['round'] === 1 && is_null($match['participant_1']) && is_null($match['participant_2'])) {
+            unset($matchRefs[$number]);
+        }
+    }
+
+    $roundGrouped = collect($matchRefs)->groupBy('round');
+    foreach ($roundGrouped as $r => $group) {
+        if (isset($roundGrouped[$r + 1])) {
+            $nextMatches = $roundGrouped[$r + 1]->values();
+            foreach ($group->values() as $i => $match) {
+                $matchRefs[$match['match_number']]['next_match_number'] = $nextMatches[floor($i / 2)]['match_number'] ?? null;
+            }
+        }
+    }
+
+    $matchesToInsert = array_map(function ($match) {
+        unset($match['next_match_id']);
+        return Arr::except($match, ['next_match_number']);
+    }, array_values($matchRefs));
+
+    DB::table('tournament_matches')->insert($matchesToInsert);
+
+    $matchMap = TournamentMatch::where('pool_id', $poolId)->get()->keyBy('match_number');
+
+    foreach ($matchRefs as $matchData) {
+        if (isset($matchData['next_match_number'])) {
+            $match = $matchMap[$matchData['match_number']] ?? null;
+            $nextMatch = $matchMap[$matchData['next_match_number']] ?? null;
+
+            if ($match && $nextMatch) {
+                $match->next_match_id = $nextMatch->id;
+                $match->save();
+
+                if ($match->winner_id && is_null($nextMatch->participant_1)) {
+                    $nextMatch->participant_1 = $match->winner_id;
+                    $nextMatch->save();
+                } elseif ($match->winner_id && is_null($nextMatch->participant_2)) {
+                    $nextMatch->participant_2 = $match->winner_id;
+                    $nextMatch->save();
+                }
+            }
+        }
+    }
+
+    return response()->json([
+        'message' => 'Bracket berhasil dibuat dan peserta sudah di-assign ke pool.',
+        'total_participants' => $total,
+        'bracket_size' => $bracketSize,
+        'total_matches' => count($matchRefs),
+        'rounds_generated' => $rounds,
+    ]);
+}
+
+private function generateBracketForTen($poolId, $participants)
+{
+    TournamentMatch::where('pool_id', $poolId)->delete();
+
+    $pool = Pool::with('tournament')->find($poolId);
+    if (!$pool) {
+        return response()->json(['message' => 'Pool tidak ditemukan.'], 404);
+    }
+
+    $usedParticipantIds = TournamentMatch::whereHas('pool', function ($q) use ($pool) {
+        $q->where('tournament_id', $pool->tournament_id);
+    })
+        ->pluck('participant_1')
+        ->merge(
+            TournamentMatch::whereHas('pool', function ($q) use ($pool) {
+                $q->where('tournament_id', $pool->tournament_id);
+            })
+            ->pluck('participant_2')
+        )->unique();
+
+    $participants = $participants->reject(function ($p) use ($usedParticipantIds) {
+        return $usedParticipantIds->contains($p->id);
+    })->values();
+
+    if ($participants->count() < 10) {
+        return response()->json(['message' => 'Peserta kurang dari 10 setelah disaring.'], 400);
+    }
+
+    $selected = $participants->slice(0, 10)->values();
+    $participantIds = $selected->pluck('id')->toArray();
+
+    TournamentParticipant::whereIn('team_member_id', $participantIds)
+        ->where('tournament_id', $pool->tournament_id)
+        ->update(['pool_id' => $poolId]);
+
+    $matchNumber = 1;
+    $now = now();
+    $matchIds = [];
+
+    // ROUND 1 - 6 MATCH (2 bye: M1 & M6)
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 1, 'match_number' => $matchNumber++,
+        'participant_1' => $selected[0]->id, 'participant_2' => null, 'winner_id' => $selected[0]->id,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 1, 'match_number' => $matchNumber++,
+        'participant_1' => $selected[1]->id, 'participant_2' => $selected[2]->id,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 1, 'match_number' => $matchNumber++,
+        'participant_1' => $selected[3]->id, 'participant_2' => $selected[4]->id,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 1, 'match_number' => $matchNumber++,
+        'participant_1' => $selected[5]->id, 'participant_2' => $selected[6]->id,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 1, 'match_number' => $matchNumber++,
+        'participant_1' => $selected[7]->id, 'participant_2' => $selected[8]->id,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 1, 'match_number' => $matchNumber++,
+        'participant_1' => $selected[9]->id, 'participant_2' => null, 'winner_id' => $selected[9]->id,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+
+    // ROUND 2 - 4 MATCH
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 2, 'match_number' => $matchNumber++,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 2, 'match_number' => $matchNumber++,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 2, 'match_number' => $matchNumber++,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 2, 'match_number' => $matchNumber++,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+
+    // ROUND 3 - 2 MATCH
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 3, 'match_number' => $matchNumber++,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 3, 'match_number' => $matchNumber++,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+
+    // FINAL
+    $matchIds[] = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId, 'round' => 4, 'match_number' => $matchNumber++,
+        'created_at' => $now, 'updated_at' => $now,
+    ]);
+
+    // NEXT MATCH RELATION (manual mapping sesuai struktur)
+    $map = [
+        0 => 6, // M1 -> M7
+        1 => 6, // M2 -> M7
+        2 => 7, // M3 -> M8
+        3 => 7, // M4 -> M8
+        4 => 8, // M5 -> M9
+        5 => 8, // M6 -> M9
+        6 => 10, // M7 -> M11
+        7 => 10, // M8 -> M11
+        8 => 11, // M9 -> M12
+        9 => 11, // M10 -> M12
+        10 => 12, // M11 -> Final
+        11 => 12, // M12 -> Final
+    ];
+
+    foreach ($map as $from => $to) {
+        DB::table('tournament_matches')->where('id', $matchIds[$from])->update([
+            'next_match_id' => $matchIds[$to]
+        ]);
+    }
+
+    $inserted = TournamentMatch::where('pool_id', $poolId)
+        ->orderBy('round')
+        ->orderBy('match_number')
+        ->get();
+
+    return response()->json([
+        'message' => 'Bracket 10 peserta berhasil dibuat.',
+        'rounds' => $inserted,
+    ]);
+}
+
+
+
+
+
+
+
+
+private function generateBracketForTen1($poolId, $participants)
+{
+    TournamentMatch::where('pool_id', $poolId)->delete();
+
+    $pool = Pool::with('tournament')->find($poolId);
+    if (!$pool) {
+        return response()->json(['message' => 'Pool tidak ditemukan.'], 404);
+    }
+
+    $usedParticipantIds = TournamentMatch::whereHas('pool', function ($q) use ($pool) {
+        $q->where('tournament_id', $pool->tournament_id);
+    })
+    ->pluck('participant_1')
+    ->merge(
+        TournamentMatch::whereHas('pool', function ($q) use ($pool) {
+            $q->where('tournament_id', $pool->tournament_id);
+        })
+        ->pluck('participant_2')
+    )->unique();
+
+    $participants = $participants->reject(function ($p) use ($usedParticipantIds) {
+        return $usedParticipantIds->contains($p->id);
+    })->values();
+
+    if ($participants->count() < 10) {
+        return response()->json([
+            'message' => 'Peserta kurang dari 10 setelah disaring dari pool lain.',
+        ], 400);
+    }
+
+    $selected = $participants->slice(0, 10)->values();
+    $participantIds = $selected->pluck('id')->toArray();
+
+    TournamentParticipant::whereIn('team_member_id', $participantIds)
+        ->where('tournament_id', $pool->tournament_id)
+        ->update(['pool_id' => $poolId]);
+
+    $matchNumber = 1;
+
+    // Babak 1
+    $match1Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 1,
+        'match_number' => $matchNumber++,
+        'participant_1' => $selected[0]->id,
+        'participant_2' => null,
+        'winner_id' => $selected[0]->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $match2Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 1,
+        'match_number' => $matchNumber++,
+        'participant_1' => $selected[1]->id,
+        'participant_2' => $selected[2]->id,
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $match3Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 1,
+        'match_number' => $matchNumber++,
+        'participant_1' => $selected[3]->id,
+        'participant_2' => $selected[4]->id,
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $match4Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 1,
+        'match_number' => $matchNumber++,
+        'participant_1' => $selected[5]->id,
+        'participant_2' => $selected[6]->id,
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $match5Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 1,
+        'match_number' => $matchNumber++,
+        'participant_1' => $selected[7]->id,
+        'participant_2' => $selected[8]->id,
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $match6Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 1,
+        'match_number' => $matchNumber++,
+        'participant_1' => $selected[9]->id,
+        'participant_2' => null,
+        'winner_id' => $selected[9]->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    // Babak 2
+    $match7Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 2,
+        'match_number' => $matchNumber++,
+        'participant_1' => $selected[0]->id,
+        'participant_2' => null,
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $match8Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 2,
+        'match_number' => $matchNumber++,
+        'participant_1' => null,
+        'participant_2' => $selected[9]->id,
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    // Final
+    $match9Id = DB::table('tournament_matches')->insertGetId([
+        'pool_id' => $poolId,
+        'round' => 3,
+        'match_number' => $matchNumber++,
+        'participant_1' => null,
+        'participant_2' => null,
+        'winner_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    // Update next_match_id
+    DB::table('tournament_matches')->where('id', $match1Id)->update(['next_match_id' => $match7Id]);
+    DB::table('tournament_matches')->where('id', $match2Id)->update(['next_match_id' => $match7Id]);
+    DB::table('tournament_matches')->where('id', $match3Id)->update(['next_match_id' => $match8Id]);
+    DB::table('tournament_matches')->where('id', $match4Id)->update(['next_match_id' => $match8Id]);
+    DB::table('tournament_matches')->where('id', $match5Id)->update(['next_match_id' => $match8Id]);
+    DB::table('tournament_matches')->where('id', $match6Id)->update(['next_match_id' => $match8Id]);
+    DB::table('tournament_matches')->where('id', $match7Id)->update(['next_match_id' => $match9Id]);
+    DB::table('tournament_matches')->where('id', $match8Id)->update(['next_match_id' => $match9Id]);
+
+    $inserted = TournamentMatch::where('pool_id', $poolId)
+        ->orderBy('round')
+        ->orderBy('match_number')
+        ->get();
+
+    return response()->json([
+        'message' => 'Bracket untuk 10 peserta berhasil dibuat.',
+        'rounds' => $inserted,
+    ]);
+    
+}
+
+
+
+
+
+    
+private function generateFullPrestasiBracket__yang_dipake($poolId, $participants)
 {
     TournamentMatch::where('pool_id', $poolId)->delete();
 
