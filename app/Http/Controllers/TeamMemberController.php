@@ -73,6 +73,10 @@ class TeamMemberController extends Controller
 
             // 🔐 Filter berdasarkan grup user
             if ($user->group && $user->group->name === 'Owner') {
+                if ($is_payment_confirmation) {
+                    // ⛔ Kalau mode konfirmasi pembayaran, jangan load semua
+                    $query->whereHas('billingDetails');
+                }
                 // lihat semua
             } elseif ($user->group && $user->group->name === 'Event PIC') {
                 $query->where(function ($q) use ($user) {
