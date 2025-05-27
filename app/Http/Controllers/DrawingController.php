@@ -551,43 +551,78 @@ class DrawingController extends Controller
         ]);
     }
 
-
-
-
     public function getPools()
     {
         $pools = Pool::with([
                 'tournament:id,name',
                 'matchCategory:id,name',
                 'ageCategory:id,name',
-                'categoryClass:id,name,gender,weight_min,weight_max'
+                'categoryClass:id,name,gender,weight_min,weight_max,age_category_id',
+                'categoryClass.ageCategory:id,name'
             ])
-            ->withCount('matches') // ✅ Tambahkan ini
+            ->withCount('matches')
+            ->get();
+
+        // Ambil semua kombinasi tournament + match category + age category dari pools
+        $tournamentId = $pools->pluck('tournament_id')->first(); // anggap satu turnamen aktif
+        $matchCategoryId = $pools->pluck('match_category_id')->first(); // asumsi juga satu kategori
+        $ageCategoryId = $pools->pluck('age_category_id')->first(); // dari pool langsung
+
+        // 🔁 Ambil teamMembers sesuai pola dari getClassOnTeamMember()
+        $teamMembers = TeamMember::whereHas('tournamentParticipants', function ($q) use ($tournamentId, $matchCategoryId) {
+                $q->where('tournament_id', $tournamentId)
+                ->when($matchCategoryId, fn($q) => $q->where('match_category_id', $matchCategoryId));
+            })
+            ->with([
+                'categoryClass' => function ($q) use ($ageCategoryId) {
+                    if ($ageCategoryId) {
+                        $q->where('age_category_id', $ageCategoryId);
+                    }
+                },
+                'ageCategory'
+            ])
             ->get()
-            ->map(function ($pool) {
-                return [
-                    'pool_id' => $pool->id,
-                    'tournament_name' => $pool->tournament->name ?? null,
-                    'match_category' => $pool->matchCategory->name ?? null,
-                    'age_category' => $pool->ageCategory->name ?? null,
-                    'category_class' => $pool->categoryClass ? [
-                        'id' => $pool->categoryClass->id,
-                        'name' => $pool->categoryClass->name,
-                        'gender' => $pool->categoryClass->gender,
-                        'weight_min' => $pool->categoryClass->weight_min,
-                        'weight_max' => $pool->categoryClass->weight_max,
-                    ] : null,
-                    'name' => $pool->name,
-                    'match_chart' => $pool->match_chart,
-                    'matches_count' => $pool->matches_count // ✅ Inject ke frontend
-                ];
-            });
+            ->filter(fn ($tm) => $tm->categoryClass !== null);
+
+        // 🔁 Kelompokkan berdasarkan category_class_id dan hitung jumlah
+        $grouped = $teamMembers->groupBy('category_class_id');
+
+        $availableCounts = $grouped->map(fn ($members) => $members->count());
+
+        // 🔁 Inject ke pool
+        $pools = $pools->map(function ($pool) use ($availableCounts) {
+            $class = $pool->categoryClass;
+            $classId = $class?->id;
+
+            return [
+                'pool_id' => $pool->id,
+                'tournament_id' => $pool->tournament_id,
+                'tournament_name' => $pool->tournament->name ?? null,
+                'match_category' => $pool->matchCategory->name ?? null,
+                'age_category' => $pool->ageCategory->name ?? null,
+                'category_class' => $class ? [
+                    'id' => $classId,
+                    'name' => $class->name,
+                    'gender' => $class->gender,
+                    'weight_min' => $class->weight_min,
+                    'weight_max' => $class->weight_max,
+                    'available_athletes' => $availableCounts[$classId] ?? 0
+                ] : null,
+                'name' => $pool->name,
+                'match_chart' => $pool->match_chart,
+                'matches_count' => $pool->matches_count,
+            ];
+        });
 
         return response()->json([
             'message' => 'Pools retrieved successfully',
             'data' => $pools
         ]);
     }
+
+
+
+
 
 
     public function getMatchList($poolId)
