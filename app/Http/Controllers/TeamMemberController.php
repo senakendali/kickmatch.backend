@@ -300,22 +300,28 @@ class TeamMemberController extends Controller
                 ->unique()
                 ->implode(', ');
 
-            $sheet->fromArray([
-                $member->id,
-                $tournamentNames,
-                $member->contingent->name ?? '',
-                $member->name,
-                $member->birth_place,
-                $member->birth_date,
-                $member->gender,
-                $member->body_height,
-                $member->body_weight,
-                $member->nik,
-                $member->family_card_number,
-                $member->address,
-            ], null, "A{$row}");
+           $sheet->setCellValue("A{$row}", $member->id);
+            $sheet->setCellValue("B{$row}", $tournamentNames);
+            $sheet->setCellValue("C{$row}", $member->contingent->name ?? '');
+            $sheet->setCellValue("D{$row}", $member->name);
+            $sheet->setCellValue("E{$row}", $member->birth_place);
+            $sheet->setCellValue("F{$row}", $member->birth_date);
+            $sheet->setCellValue("G{$row}", $member->gender);
+            $sheet->setCellValue("H{$row}", $member->body_height);
+            $sheet->setCellValue("I{$row}", $member->body_weight);
+
+            // ✅ Khusus NIK & KK pakai format teks eksplisit
+            $sheet->setCellValueExplicit("J{$row}", (string) $member->nik, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("K{$row}", (string) $member->family_card_number, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+
+            $sheet->setCellValue("L{$row}", $member->address);
+
             $row++;
         }
+
+        // Set NIK dan KK sebagai string (kolom J dan K = kolom ke-10 dan 11)
+        $sheet->setCellValueExplicit("J{$row}", (string) $member->nik, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+        $sheet->setCellValueExplicit("K{$row}", (string) $member->family_card_number, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
         $writer = new Xlsx($spreadsheet);
         $filename = 'team_members_' . date('Ymd_His') . '.xlsx';
