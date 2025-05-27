@@ -44,8 +44,8 @@ class SeniParticipantSeeder extends Seeder
             };
 
             foreach (['male', 'female'] as $gender) {
-                // 🟢 Seni Tunggal (3 peserta per gender)
-                for ($i = 0; $i < 3; $i++) {
+                // 🟢 Seni Tunggal (24 peserta putra/putri)
+                for ($i = 0; $i < 24; $i++) {
                     $member = $createTeamMember($faker->randomElement($contingents), 2, $gender);
                     \App\Models\TournamentParticipant::create([
                         'tournament_id' => $tournamentId,
@@ -53,8 +53,8 @@ class SeniParticipantSeeder extends Seeder
                     ]);
                 }
 
-                // 🟢 Seni Ganda (3 pasang → 6 peserta per gender)
-                foreach (array_slice($contingents, 0, 3) as $contingentId) {
+                // 🟢 Seni Ganda (16 pasang → 32 peserta)
+                foreach (array_slice($contingents, 0, 16) as $contingentId) {
                     foreach ([1, 2] as $_) {
                         $member = $createTeamMember($contingentId, 3, $gender);
                         \App\Models\TournamentParticipant::create([
@@ -64,8 +64,8 @@ class SeniParticipantSeeder extends Seeder
                     }
                 }
 
-                // 🟢 Seni Regu (3 regu → 9 peserta per gender)
-                foreach (array_slice($contingents, 0, 3) as $contingentId) {
+                // 🟢 Seni Regu (10 regu → 30 peserta)
+                foreach (array_slice($contingents, 0, 10) as $contingentId) {
                     foreach ([1, 2, 3] as $_) {
                         $member = $createTeamMember($contingentId, 4, $gender);
                         \App\Models\TournamentParticipant::create([
@@ -77,7 +77,7 @@ class SeniParticipantSeeder extends Seeder
             }
 
             DB::commit();
-            echo "✅ Seeder SeniParticipantSeeder completed with 3 match per category per gender.\n";
+            echo "✅ Seeder SeniParticipantSeeder completed with male and female participants.\n";
         } catch (\Exception $e) {
             DB::rollBack();
             throw $e;

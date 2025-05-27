@@ -219,6 +219,7 @@ Route::get('/users/count', [UserController::class, 'countUsersWithRole']);
 Route::get('/sync/matches', [SyncController::class, 'matches']);
 Route::get('/sync/matches/seni', [SyncController::class, 'seniMatches']);
 Route::post('/update-tanding-match-status', [SyncController::class, 'updateTandingMatchStatus']);
+Route::post('/update-seni-match-status', [SyncController::class, 'updateSeniMatchStatus']);
 
 Route::post('/update-next-match-slot', [SyncController::class, 'updateNextMatchSlot']);
 

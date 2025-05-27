@@ -81,19 +81,15 @@ class SyncController extends Controller
     {
         $tournamentSlug = $request->query('tournament');
 
-        $matches = SeniMatch::with([
+        $matches = \App\Models\SeniMatch::with([
                 'pool.tournament',
                 'pool.ageCategory',
                 'scheduleDetail.schedule.arena',
                 'contingent',
             ])
-            ->join('match_schedule_details', 'seni_matches.id', '=', 'match_schedule_details.seni_match_id')
-            ->join('match_schedules', 'match_schedule_details.match_schedule_id', '=', 'match_schedules.id')
-            ->join('seni_pools', 'seni_matches.pool_id', '=', 'seni_pools.id')
-            ->join('tournaments', 'seni_pools.tournament_id', '=', 'tournaments.id')
-            ->where('tournaments.slug', $tournamentSlug)
-            ->orderBy('match_schedule_details.order')
-            ->select('seni_matches.*')
+            ->whereHas('pool.tournament', function ($q) use ($tournamentSlug) {
+                $q->where('slug', $tournamentSlug);
+            })
             ->get();
 
         $result = $matches->map(function ($match) {
@@ -145,6 +141,7 @@ class SyncController extends Controller
         return response()->json($result);
     }
 
+
     public function updateTandingMatchStatus(Request $request)
     {
         $validated = $request->validate([
@@ -161,6 +158,23 @@ class SyncController extends Controller
                 'participant_1_score' => $validated['participant_1_score'] ?? 0,
                 'participant_2_score' => $validated['participant_2_score'] ?? 0,
                 'winner_id' => $validated['winner_id'] ?? null,
+            ]);
+
+        return response()->json(['message' => 'Status updated']);
+    }
+
+    public function updateSeniMatchStatus(Request $request)
+    {
+        $validated = $request->validate([
+            'remote_match_id' => 'required|integer',
+            'status' => 'required|in:not_started,ongoing,finished',
+            'final_score' => 'nullable|numeric',
+        ]);
+
+        SeniMatch::where('id', $validated['remote_match_id'])
+            ->update([
+                'status' => $validated['status'],
+                'final_score' => $validated['final_score'] ?? 0,
             ]);
 
         return response()->json(['message' => 'Status updated']);

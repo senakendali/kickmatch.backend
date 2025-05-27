@@ -64,7 +64,7 @@ class SeniMatch extends Model
 
      public function scheduleDetail()
     {
-        return $this->hasOne(MatchScheduleDetail::class, 'tournament_match_id');
+        return $this->hasOne(MatchScheduleDetail::class, 'seni_match_id');
     }
 
    
