@@ -23,6 +23,62 @@ class CategoryClassController extends Controller
     }
 
     public function getClassOnTeamMember(Request $request)
+{
+    $ageCategoryId = $request->query('age_category_id');
+    $tournamentId = $request->query('tournament_id');
+    $matchCategoryId = $request->query('match_category_id');
+    $filterFor = $request->query('filter_for'); // ✅ ambil filter_for
+
+    if (!$tournamentId) {
+        return response()->json(['error' => 'tournament_id is required'], 400);
+    }
+
+    $teamMembers = TeamMember::whereHas('tournamentParticipants', function ($q) use ($tournamentId) {
+            $q->where('tournament_id', $tournamentId);
+        })
+        ->when($matchCategoryId, function ($q) use ($matchCategoryId) {
+            $q->where('match_category_id', $matchCategoryId);
+        })
+        ->with(['categoryClass' => function ($q) use ($ageCategoryId) {
+            if ($ageCategoryId) {
+                $q->where('age_category_id', $ageCategoryId);
+            }
+        }, 'ageCategory'])
+        ->get()
+        ->filter(fn ($tm) => $tm->categoryClass !== null);
+
+    $grouped = $teamMembers->groupBy('category_class_id');
+
+    $result = $grouped->map(function ($members, $classId) {
+        $class = $members->first()->categoryClass;
+        $ageCategory = $class->ageCategory;
+
+        return [
+            'class_id' => $classId,
+            'gender' => $class->gender,
+            'class_name' => $class->name,
+            'weight_min' => $class->weight_min,
+            'weight_max' => $class->weight_max,
+            'age_category_id' => $class->age_category_id,
+            'age_category_name' => $ageCategory->name ?? '-',
+            'team_member_count' => $members->count(),
+        ];
+    })->values();
+
+    // ✅ Filter hanya kelas yang belum ada pool jika filter_for = drawing
+    if ($filterFor === 'drawing') {
+        $usedClassIds = \App\Models\Pool::where('tournament_id', $tournamentId)
+            ->pluck('category_class_id')
+            ->unique();
+
+        $result = $result->reject(fn ($class) => $usedClassIds->contains($class['class_id']))->values();
+    }
+
+    return response()->json($result);
+}
+
+
+    public function getClassOnTeamMember___(Request $request)
     {
         $ageCategoryId = $request->query('age_category_id');
         $tournamentId = $request->query('tournament_id');
@@ -67,57 +123,7 @@ class CategoryClassController extends Controller
         return response()->json($result);
     }
 
-    public function getClassOnTeamMember_(Request $request)
-    {
-        // Get the age_category_id & tournament_id from the query parameters
-        $ageCategoryId = $request->query('age_category_id', null);
-        $tournamentId = $request->query('tournament_id', null);
-
-        // Pastikan tournament_id diberikan
-        if (!$tournamentId) {
-            return response()->json(['error' => 'tournament_id is required'], 400);
-        }
-
-        // Ambil contingent_id dari peserta yang ada di turnamen
-        $contingentIds = TournamentParticipant::join('team_members', 'tournament_participants.team_member_id', '=', 'team_members.id')
-            ->where('tournament_participants.tournament_id', $tournamentId)
-            ->pluck('team_members.contingent_id')
-            ->unique();
-        
-        //return response()->json(['id' => $contingentIds], 200);
-
-        // Query TeamMember yang berasal dari Contingent yang ikut turnamen
-        $query = TeamMember::whereIn('contingent_id', $contingentIds);
-
-        // Filter berdasarkan age_category_id jika diberikan
-        if ($ageCategoryId) {
-            $query->where('age_category_id', $ageCategoryId);
-        }
-
-        // Fetch distinct category_class_id with related categoryClass
-        $classes = $query->select('category_class_id')
-            ->with('categoryClass')
-            ->groupBy('category_class_id')
-            ->get()
-            ->map(function ($member) use ($ageCategoryId, $contingentIds) {
-                return [
-                    'class_id' => $member->category_class_id,
-                    'gender' => $member->categoryClass->gender,
-                    'class_name' => $member->categoryClass->name,
-                    'weight_min' => $member->categoryClass->weight_min,
-                    'weight_max' => $member->categoryClass->weight_max,
-                    'team_member_count' => TeamMember::where('category_class_id', $member->category_class_id)
-                        ->when($ageCategoryId, function ($query) use ($ageCategoryId) {
-                            return $query->where('age_category_id', $ageCategoryId);
-                        })
-                        ->whereIn('contingent_id', $contingentIds)
-                        ->count(),
-                ];
-            });
-
-        return response()->json($classes);
-    }
-
+    
     public function fetchByAgeCategory($ageCategoryId)
     {
         try {

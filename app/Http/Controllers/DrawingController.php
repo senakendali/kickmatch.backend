@@ -481,7 +481,7 @@ class DrawingController extends Controller
         $validTeamMemberIds = DB::table('team_members')
             ->where('match_category_id', $matchCategoryId)
             ->where('age_category_id', $ageCategoryId)
-            ->when(!in_array($ageCategoryId, [1, 2]) && $categoryClassId, function ($q) use ($categoryClassId) {
+            ->when(!in_array($ageCategoryId, [1]) && $categoryClassId, function ($q) use ($categoryClassId) {
                 $q->where('category_class_id', $categoryClassId);
             })
             ->pluck('id')
@@ -512,13 +512,13 @@ class DrawingController extends Controller
             ->where('tournament_id', $tournamentId)
             ->where('match_category_id', $matchCategoryId)
             ->where('age_category_id', $ageCategoryId)
-            ->when(!in_array($ageCategoryId, [1, 2]) && $categoryClassId, function ($q) use ($categoryClassId) {
+            ->when(!in_array($ageCategoryId, [1]) && $categoryClassId, function ($q) use ($categoryClassId) {
                 $q->where('category_class_id', $categoryClassId);
             })
             ->delete();
 
         // ✅ Hitung jumlah pool
-        $totalPools = in_array($ageCategoryId, [1, 2])
+        $totalPools = in_array($ageCategoryId, [1])
             ? 1
             : match ($matchChart) {
                 'full_prestasi', 2 => 1,
@@ -532,7 +532,7 @@ class DrawingController extends Controller
                 'tournament_id' => $tournamentId,
                 'match_category_id' => $matchCategoryId,
                 'age_category_id' => $ageCategoryId,
-                'category_class_id' => in_array($ageCategoryId, [1, 2]) ? null : $categoryClassId,
+                'category_class_id' => in_array($ageCategoryId, [1]) ? null : $categoryClassId,
                 'match_chart' => $matchChart === 'full_prestasi' ? 0 : $matchChart,
                 'match_duration' => $matchDuration,
                 'name' => "Pool {$i}",

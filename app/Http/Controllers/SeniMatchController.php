@@ -75,11 +75,21 @@ class SeniMatchController extends Controller
 
         $matches = $query->get();
 
-        $grouped = $matches->groupBy(fn($match) => $match->matchCategory->name . '|' . $match->gender)
+        $ageOrder = [
+            'Usia Dini 1' => 1,
+            'Usia Dini 2' => 2,
+            'Pra Remaja' => 3,
+            'Remaja' => 4,
+            'Dewasa' => 5,
+        ];
+
+
+        $grouped = $matches->groupBy(fn($match) => $match->matchCategory->name . '|' . $match->gender . '|' . $match->pool->ageCategory->name)
             ->map(function ($matchesByCategory, $key) {
-                [$category, $gender] = explode('|', $key);
+                [$category, $gender, $ageCategory] = explode('|', $key);
 
                 return [
+                    'age_category' => $ageCategory,
                     'category' => $category,
                     'gender' => $gender,
                     'pools' => $matchesByCategory->groupBy(fn($match) => $match->pool->name)
@@ -90,7 +100,11 @@ class SeniMatchController extends Controller
                             ];
                         })->values()
                 ];
-            })->values();
+            })
+            ->sortBy(fn($item) => $ageOrder[$item['age_category']] ?? 99) // sort by defined order
+            ->values();
+
+
 
         return response()->json($grouped);
     }
