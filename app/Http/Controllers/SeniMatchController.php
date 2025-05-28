@@ -226,10 +226,69 @@ class SeniMatchController extends Controller
         return response()->json(['data' => $result]);
     }
 
-
-
-
     public function matchList(Request $request)
+    {
+        $tournamentId = $request->query('tournament_id');
+        $includeScheduled = $request->boolean('include_scheduled'); // ← tambahin flag
+
+        $query = SeniMatch::with([
+            'matchCategory',
+            'contingent',
+            'teamMember1',
+            'teamMember2',
+            'teamMember3',
+            'pool.ageCategory',
+        ])
+        ->orderBy('pool_id')
+        ->orderBy('match_order');
+
+        // ⬇️ Exclude yang sudah dijadwalkan hanya kalau bukan mode edit
+        if (!$includeScheduled) {
+            $query->whereNotExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('match_schedule_details')
+                    ->whereColumn('match_schedule_details.seni_match_id', 'seni_matches.id');
+            });
+        }
+
+        // ⬇️ Filter berdasarkan tournament_id
+        if ($tournamentId) {
+            $query->whereHas('pool', function ($q) use ($tournamentId) {
+                $q->where('tournament_id', $tournamentId);
+            });
+        }
+
+        $matches = $query->get();
+
+        // ⬇️ Group by age_category + match category + gender
+        $grouped = $matches->groupBy(fn($match) =>
+            $match->pool->ageCategory->name . '|' .
+            $match->matchCategory->name . '|' .
+            $match->gender
+        )
+        ->map(function ($matchesByGroup, $key) {
+            [$ageCategory, $category, $gender] = explode('|', $key);
+
+            return [
+                'age_category' => $ageCategory,
+                'category' => $category,
+                'gender' => $gender,
+                'pools' => $matchesByGroup->groupBy(fn($match) => $match->pool->name)
+                    ->map(function ($poolMatches, $poolName) {
+                        return [
+                            'name' => $poolName,
+                            'matches' => $poolMatches->values()
+                        ];
+                    })->values()
+            ];
+        })->values();
+
+        return response()->json($grouped);
+    }
+
+
+
+    public function matchList__(Request $request)
     {
         $tournamentId = $request->query('tournament_id');
         $includeScheduled = $request->boolean('include_scheduled'); // ← tambahin flag
