@@ -563,36 +563,36 @@ class DrawingController extends Controller
             ->withCount('matches')
             ->get();
 
-        // Ambil semua kombinasi tournament + match category + age category dari pools
-        $tournamentId = $pools->pluck('tournament_id')->first(); // anggap satu turnamen aktif
-        $matchCategoryId = $pools->pluck('match_category_id')->first(); // asumsi juga satu kategori
-        $ageCategoryId = $pools->pluck('age_category_id')->first(); // dari pool langsung
+        $tournamentId = $pools->pluck('tournament_id')->first();
+        $matchCategoryId = $pools->pluck('match_category_id')->first();
 
-        // 🔁 Ambil teamMembers sesuai pola dari getClassOnTeamMember()
+        // Ambil semua team members yang relevan
         $teamMembers = TeamMember::whereHas('tournamentParticipants', function ($q) use ($tournamentId, $matchCategoryId) {
                 $q->where('tournament_id', $tournamentId)
                 ->when($matchCategoryId, fn($q) => $q->where('match_category_id', $matchCategoryId));
             })
-            ->with([
-                'categoryClass' => function ($q) use ($ageCategoryId) {
-                    if ($ageCategoryId) {
-                        $q->where('age_category_id', $ageCategoryId);
-                    }
-                },
-                'ageCategory'
-            ])
-            ->get()
-            ->filter(fn ($tm) => $tm->categoryClass !== null);
+            ->with(['categoryClass', 'ageCategory'])
+            ->get();
 
-        // 🔁 Kelompokkan berdasarkan category_class_id dan hitung jumlah
-        $grouped = $teamMembers->groupBy('category_class_id');
+        // Kelompokkan berdasarkan category_class_id
+        $groupedByClassId = $teamMembers
+            ->filter(fn($tm) => $tm->category_class_id !== null)
+            ->groupBy('category_class_id');
 
-        $availableCounts = $grouped->map(fn ($members) => $members->count());
+        // Kelompokkan berdasarkan age_category_id
+        $groupedByAgeId = $teamMembers
+            ->filter(fn($tm) => $tm->age_category_id !== null)
+            ->groupBy('age_category_id');
 
-        // 🔁 Inject ke pool
-        $pools = $pools->map(function ($pool) use ($availableCounts) {
+        // Transformasi hasil pool
+        $pools = $pools->map(function ($pool) use ($groupedByClassId, $groupedByAgeId) {
             $class = $pool->categoryClass;
             $classId = $class?->id;
+            $ageCategoryId = $pool->age_category_id;
+
+            $available = $classId
+                ? ($groupedByClassId[$classId]->count() ?? 0)
+                : ($groupedByAgeId[$ageCategoryId]->count() ?? 0);
 
             return [
                 'pool_id' => $pool->id,
@@ -600,14 +600,14 @@ class DrawingController extends Controller
                 'tournament_name' => $pool->tournament->name ?? null,
                 'match_category' => $pool->matchCategory->name ?? null,
                 'age_category' => $pool->ageCategory->name ?? null,
-                'category_class' => $class ? [
+                'category_class' => [
                     'id' => $classId,
-                    'name' => $class->name,
-                    'gender' => $class->gender,
-                    'weight_min' => $class->weight_min,
-                    'weight_max' => $class->weight_max,
-                    'available_athletes' => $availableCounts[$classId] ?? 0
-                ] : null,
+                    'name' => $class?->name,
+                    'gender' => $class?->gender,
+                    'weight_min' => $class?->weight_min,
+                    'weight_max' => $class?->weight_max,
+                    'available_athletes' => $available
+                ],
                 'name' => $pool->name,
                 'match_chart' => $pool->match_chart,
                 'matches_count' => $pool->matches_count,
@@ -619,6 +619,8 @@ class DrawingController extends Controller
             'data' => $pools
         ]);
     }
+
+
 
 
 
