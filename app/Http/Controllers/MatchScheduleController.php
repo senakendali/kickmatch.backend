@@ -39,7 +39,8 @@ class MatchScheduleController extends Controller
             'schedule.tournament',
             'tournamentMatch.participantOne.contingent',
             'tournamentMatch.participantTwo.contingent',
-            'tournamentMatch.pool'
+            'tournamentMatch.pool',
+            'tournamentMatch.pool.categoryClass' 
         ])
         ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
         ->whereHas('tournamentMatch');
@@ -79,6 +80,13 @@ class MatchScheduleController extends Controller
             $poolName = $detail->tournamentMatch->pool->name ?? 'Tanpa Pool';
             $roundNumber = $detail->tournamentMatch->round ?? 0;
             $roundLabel = $roundLabelsMap[$roundNumber] ?? 'Babak Tidak Diketahui';
+            
+            $categoryClass = optional(optional($detail->tournamentMatch->pool)->categoryClass);
+
+            $className = $categoryClass->name ?? 'Tanpa Kelas';
+            $minWeight = $categoryClass->weight_min ?? null;
+            $maxWeight = $categoryClass->weight_max ?? null;
+
 
             $matchData = [
                 'match_order' => $detail->order,
@@ -87,6 +95,7 @@ class MatchScheduleController extends Controller
                 'participant_two' => optional($detail->tournamentMatch->participantTwo)->name,
                 'contingent_one' => optional(optional($detail->tournamentMatch->participantOne)->contingent)->name,
                 'contingent_two' => optional(optional($detail->tournamentMatch->participantTwo)->contingent)->name,
+                'class_name' => $className.' ('.$minWeight.' KG - '.$maxWeight.' KG)',
             ];
 
             $groupKey = $arenaName . '||' . $date;
