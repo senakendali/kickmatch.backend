@@ -305,10 +305,20 @@ public function getSchedules($slug)
     $result = [];
 
     foreach ($details as $detail) {
+        $match = $detail->tournamentMatch;
+
+        // 🚫 Skip jika match adalah BYE:
+        $isByeMatch = (
+            ($match->participant_1 === null || $match->participant_2 === null)
+            && $match->winner_id !== null
+            && $match->next_match_id !== null
+        );
+        if ($isByeMatch) continue;
+
         $arenaName = $detail->schedule->arena->name ?? 'Tanpa Arena';
         $date = $detail->schedule->scheduled_date;
-        $pool = $detail->tournamentMatch->pool;
-        $round = $detail->tournamentMatch->round ?? 0;
+        $pool = $match->pool;
+        $round = $match->round ?? 0;
 
         $categoryClass = optional($pool->categoryClass);
         $ageCategory = optional($pool->ageCategory);
@@ -318,7 +328,6 @@ public function getSchedules($slug)
         $maxWeight = $categoryClass->weight_max ?? null;
 
         // Logic fallback: tampilkan "Pemenang dari Partai #X" kalau peserta belum ada
-        $match = $detail->tournamentMatch;
         $participantOneName = optional($match->participantOne)->name;
         $participantTwoName = optional($match->participantTwo)->name;
 
@@ -355,6 +364,7 @@ public function getSchedules($slug)
         $result[$groupKey]['tournament_name'] = $tournament->name;
         $result[$groupKey]['matches'][] = $matchData;
     }
+
 
     $final = [];
 
