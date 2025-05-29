@@ -332,15 +332,17 @@ public function getSchedules($slug)
         $participantTwoName = optional($match->participantTwo)->name;
 
        if (!$participantOneName) {
-            $fromMatch = $match->previousMatches->firstWhere(fn($m) => $m->next_match_id == $match->id);
-            $participantOneName = $fromMatch ? 'Pemenang dari Partai #' . $fromMatch->match_number : '-';
+            $fromMatch = $match->previousMatches->first();
+            $orderLabel = optional($fromMatch?->scheduleDetail)->order;
+            $participantOneName = $orderLabel ? 'Pemenang dari Partai #' . $orderLabel : '-';
         }
 
         if (!$participantTwoName) {
-            $fromMatches = $match->previousMatches->filter(fn($m) => $m->next_match_id == $match->id)->values();
-            $fromMatch = $fromMatches->skip(1)->first(); // ambil yang kedua
-            $participantTwoName = $fromMatch ? 'Pemenang dari Partai #' . $fromMatch->match_number : '-';
+            $fromMatch = $match->previousMatches->skip(1)->first();
+            $orderLabel = optional($fromMatch?->scheduleDetail)->order;
+            $participantTwoName = $orderLabel ? 'Pemenang dari Partai #' . $orderLabel : '-';
         }
+
 
 
         $matchData = [
