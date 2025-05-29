@@ -331,15 +331,17 @@ public function getSchedules($slug)
         $participantOneName = optional($match->participantOne)->name;
         $participantTwoName = optional($match->participantTwo)->name;
 
-        if (!$participantOneName) {
-            $fromMatch = $match->previousMatches->firstWhere('winner_id', '!=', null);
+       if (!$participantOneName) {
+            $fromMatch = $match->previousMatches->firstWhere(fn($m) => $m->next_match_id == $match->id);
             $participantOneName = $fromMatch ? 'Pemenang dari Partai #' . $fromMatch->match_number : '-';
         }
 
         if (!$participantTwoName) {
-            $fromMatch = $match->previousMatches->filter(fn($m) => $m->winner_id !== null)->skip(1)->first();
+            $fromMatches = $match->previousMatches->filter(fn($m) => $m->next_match_id == $match->id)->values();
+            $fromMatch = $fromMatches->skip(1)->first(); // ambil yang kedua
             $participantTwoName = $fromMatch ? 'Pemenang dari Partai #' . $fromMatch->match_number : '-';
         }
+
 
         $matchData = [
             'pool_name' => $pool->name ?? 'Tanpa Pool',
