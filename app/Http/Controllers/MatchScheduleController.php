@@ -394,8 +394,7 @@ public function export(Request $request)
 
     $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('exports.tanding-schedule', ['data' => $final]);
 
-    return $pdf->stream("Jadwal_{$arenaName}_{$scheduledDate}.pdf");
-
+    return $pdf->download("Jadwal_{$arenaName}_{$scheduledDate}.pdf");
 }
 
 
