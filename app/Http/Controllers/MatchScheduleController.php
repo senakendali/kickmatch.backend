@@ -333,13 +333,32 @@ public function getSchedules($slug)
 
         if (!$participantOneName) {
             $fromMatch = $match->previousMatches->firstWhere('winner_id', '!=', null);
-            $participantOneName = $fromMatch ? 'Pemenang dari Partai #' . $fromMatch->match_number : '-';
+            if ($fromMatch) {
+                $isBye = (
+                    ($fromMatch->participant_1 === null || $fromMatch->participant_2 === null)
+                    && $fromMatch->winner_id !== null
+                    && $fromMatch->next_match_id !== null
+                );
+                $participantOneName = $isBye ? 'BYE' : 'Pemenang dari Partai #' . $fromMatch->match_number;
+            } else {
+                $participantOneName = '-';
+            }
         }
 
         if (!$participantTwoName) {
             $fromMatch = $match->previousMatches->filter(fn($m) => $m->winner_id !== null)->skip(1)->first();
-            $participantTwoName = $fromMatch ? 'Pemenang dari Partai #' . $fromMatch->match_number : '-';
+            if ($fromMatch) {
+                $isBye = (
+                    ($fromMatch->participant_1 === null || $fromMatch->participant_2 === null)
+                    && $fromMatch->winner_id !== null
+                    && $fromMatch->next_match_id !== null
+                );
+                $participantTwoName = $isBye ? 'BYE' : 'Pemenang dari Partai #' . $fromMatch->match_number;
+            } else {
+                $participantTwoName = '-';
+            }
         }
+
 
         $matchData = [
             'pool_name' => $pool->name ?? 'Tanpa Pool',
