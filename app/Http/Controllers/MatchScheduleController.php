@@ -388,7 +388,7 @@ public function getSchedules($slug)
             if ($match['round'] == $globalMaxRound) {
                 $match['round_label'] = 'Final';
             } else {
-                $match['round_label'] = $this->getRoundLabel($match['round'], $globalMaxRound).' Jumlah round: '.$globalMaxRound;
+                $match['round_label'] = $this->getRoundLabel($match['round'], $globalMaxRound);
             }
             return $match;
         })->toArray();
