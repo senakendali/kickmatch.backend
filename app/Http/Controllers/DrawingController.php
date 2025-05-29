@@ -9,6 +9,8 @@ use App\Models\TeamMember;
 use App\Models\Pool;
 use App\Models\TournamentParticipant;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Faker\Factory as Faker;
 
 class DrawingController extends Controller
 {
@@ -161,6 +163,96 @@ class DrawingController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
+   public function createDummyOpponent($matchId)
+    {
+        $match = TournamentMatch::with('pool')->find($matchId);
+
+        if (!$match) {
+            return response()->json(['message' => 'Pertandingan tidak ditemukan.'], 404);
+        }
+
+        // Cek sisi mana yang kosong, dan sisi mana yang sudah ada
+        if ($match->participant_1 && $match->participant_2) {
+            return response()->json(['message' => 'Pertandingan sudah lengkap, tidak bisa tambah dummy.'], 400);
+        }
+
+        $participantId = $match->participant_1 ?? $match->participant_2;
+        $original = TeamMember::find($participantId);
+
+        if (!$original) {
+            return response()->json(['message' => 'Peserta asli tidak ditemukan.'], 404);
+        }
+
+        $faker = \Faker\Factory::create('id_ID');
+        $gender = $original->gender;
+
+        // Generate nama tanpa gelar
+        $first = $gender === 'male' ? $faker->firstNameMale : $faker->firstNameFemale;
+        $last = $faker->lastName;
+        $dummyName = $first . ' ' . $last;
+
+        // Konstanta dummy
+        $contingentId = 127;
+        $matchCategoryId = $original->match_category_id;
+        $ageCategoryId = $original->age_category_id;
+        $categoryClassId = $original->category_class_id;
+
+        // Buat dummy peserta
+        $dummy = new TeamMember();
+        $dummy->forceFill([
+            'contingent_id' => $contingentId,
+            'name' => $dummyName,
+            'birth_place' => $faker->city,
+            'birth_date' => $faker->date(),
+            'gender' => $gender,
+            'body_weight' => 70,
+            'body_height' => 170,
+            'blood_type' => 'O',
+            'nik' => $faker->numerify('###############'),
+            'family_card_number' => $faker->numerify('###############'),
+            'country_id' => 103,
+            'province_id' => 32,
+            'district_id' => 3217,
+            'subdistrict_id' => 321714,
+            'ward_id' => 3217142009,
+            'address' => $faker->address,
+            'championship_category_id' => 2, // Seni
+            'match_category_id' => $matchCategoryId,
+            'age_category_id' => $ageCategoryId,
+            'category_class_id' => $categoryClassId,
+            'registration_status' => 'approved',
+            'is_dummy' => true,
+        ])->save();
+
+        // Daftarkan dummy ke tournament_participants
+        $tp = TournamentParticipant::create([
+            'tournament_id' => $match->pool->tournament_id,
+            'team_member_id' => $dummy->id,
+            'pool_id' => $match->pool_id,
+        ]);
+
+        // Assign ke slot kosong (pakai team_member_id, bukan tp.id!)
+        if (!$match->participant_1) {
+            $match->participant_1 = $dummy->id;
+        } else {
+            $match->participant_2 = $dummy->id;
+        }
+
+        // Reset pemenang
+        $match->winner_id = null;
+        $match->save();
+
+        return response()->json([
+            'message' => 'Dummy berhasil ditambahkan ke match.',
+            'match_id' => $match->id,
+            'dummy' => $dummy,
+        ]);
+    }
+
+
+
+
 
     public function generatePools__(Request $request)
     {

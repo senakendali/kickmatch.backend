@@ -60,6 +60,13 @@ class TournamentMatch extends Model
         return $this->belongsTo(\App\Models\MatchCategory::class, 'match_category_id');
     }
 
+    // Semua pertandingan yang menunjuk ke match ini sebagai next_match
+    public function previousMatches()
+    {
+        return $this->hasMany(TournamentMatch::class, 'next_match_id');
+    }
+
+
 
 
 

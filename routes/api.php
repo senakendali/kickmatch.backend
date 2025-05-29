@@ -156,6 +156,8 @@ Route::apiResource('match-categories', MatchCategoryController::class);
 //Drawings
 Route::get('show-bracket/{tournamentId}/{matchCategoryId}/{ageCategoryId}', [DrawingController::class, 'generateBracket']);
 Route::post('create-pools', [DrawingController::class, 'generatePools']);
+Route::post('/matches/{pool}/create-dummy', [DrawingController::class, 'createDummyOpponent']);
+
 Route::get('pools', [DrawingController::class, 'getPools']);
 Route::get('pools/{poolId}/match-list', [DrawingController::class, 'getMatchList']);
 Route::apiResource('drawings', DrawingController::class);
