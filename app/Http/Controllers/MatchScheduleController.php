@@ -8,6 +8,7 @@ use App\Models\Tournament;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class MatchScheduleController extends Controller
 {
@@ -261,6 +262,143 @@ public function getSchedules_gokil($slug)
 
     return response()->json(['data' => $final]);
 }
+
+public function export(Request $request)
+{
+    $arenaName = $request->query('arena_name');
+    $scheduledDate = $request->query('scheduled_date');
+    $ageCategoryId = $request->query('age_category_id');
+
+    $query = MatchScheduleDetail::with([
+        'schedule.arena',
+        'schedule.tournament',
+        'tournamentMatch.participantOne.contingent',
+        'tournamentMatch.participantTwo.contingent',
+        'tournamentMatch.pool.categoryClass',
+        'tournamentMatch.pool.ageCategory',
+        'tournamentMatch.pool',
+        'tournamentMatch.previousMatches' => fn($q) => $q->with('winner'),
+    ])
+    ->whereHas('schedule', function ($q) use ($scheduledDate, $arenaName) {
+        $q->when($scheduledDate, fn($q) => $q->where('scheduled_date', $scheduledDate))
+          ->whereHas('arena', fn($q) => $q->where('name', $arenaName));
+    })
+    ->whereHas('tournamentMatch.pool', fn($q) =>
+        $q->where('age_category_id', $ageCategoryId)
+    )
+    ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
+    ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
+    ->orderBy('tournament_matches.match_number')
+    ->select('match_schedule_details.*');
+
+    $details = $query->get();
+
+    if ($details->isEmpty()) {
+        return response()->json(['message' => 'Tidak ada data jadwal ditemukan.'], 404);
+    }
+
+    $tournament = $details->first()?->schedule?->tournament;
+
+    $result = [];
+    foreach ($details as $detail) {
+        $match = $detail->tournamentMatch;
+
+        $isByeMatch = (
+            ($match->participant_1 === null || $match->participant_2 === null)
+            && $match->winner_id !== null
+            && $match->next_match_id !== null
+        );
+        if ($isByeMatch) continue;
+
+        $arenaName = $detail->schedule->arena->name ?? 'Tanpa Arena';
+        $date = $detail->schedule->scheduled_date;
+        $pool = $match->pool;
+        $round = $match->round ?? 0;
+
+        $categoryClass = optional($pool->categoryClass);
+        $ageCategory = optional($pool->ageCategory);
+        $ageCategoryName = $ageCategory->name ?? 'Tanpa Usia';
+        $className = $ageCategoryName . ' ' . ($categoryClass->name ?? 'Tanpa Kelas');
+        $gender = optional($match->participantOne)->gender == 'male' ? 'Putra' : 'Putri';
+
+        $participantOneName = optional($match->participantOne)->name;
+        $participantTwoName = optional($match->participantTwo)->name;
+
+        if (!$participantOneName) {
+            $fromMatch = $match->previousMatches->first();
+            $orderLabel = optional($fromMatch?->scheduleDetail)->order;
+            $participantOneName = $orderLabel ? 'Pemenang dari Partai #' . $orderLabel : '-';
+        }
+
+        if (!$participantTwoName) {
+            $fromMatch = $match->previousMatches->skip(1)->first();
+            $orderLabel = optional($fromMatch?->scheduleDetail)->order;
+            $participantTwoName = $orderLabel ? 'Pemenang dari Partai #' . $orderLabel : '-';
+        }
+
+        $matchData = [
+            'pool_id' => $pool->id ?? null,
+            'pool_name' => $pool->name ?? 'Tanpa Pool',
+            'round' => $round,
+            'match_number' => $detail->order,
+            'match_order' => $detail->order,
+            'match_time' => $detail->start_time,
+            'participant_one' => $participantOneName,
+            'participant_two' => $participantTwoName,
+            'contingent_one' => optional(optional($match->participantOne)->contingent)->name,
+            'contingent_two' => optional(optional($match->participantTwo)->contingent)->name,
+            'class_name' => $className . ' (' . $gender . ' )',
+            'age_category_name' => $ageCategoryName,
+            'gender' => optional($match->participantOne)->gender ?? '-',
+        ];
+
+        $groupKey = $arenaName . '||' . ($ageCategory->id ?? 0) . '||' . $date;
+
+        $result[$groupKey]['arena_name'] = $arenaName;
+        $result[$groupKey]['scheduled_date'] = $date;
+        $result[$groupKey]['age_category_id'] = $ageCategory->id ?? 0;
+        $result[$groupKey]['age_category_name'] = $ageCategoryName;
+        $result[$groupKey]['tournament_name'] = $tournament->name ?? '-';
+        $result[$groupKey]['matches'][] = $matchData;
+    }
+
+    $final = [];
+
+    foreach ($result as $entry) {
+        $matches = collect($entry['matches'])
+            ->sortBy([['round', 'asc'], ['match_number', 'asc']])
+            ->values();
+
+        $roundMap = $this->getMaxRoundByPool($matches);
+
+        $matches = $matches->map(function ($match) use ($roundMap) {
+            $poolId = $match['pool_id'] ?? null;
+            $maxRoundInThisPool = $roundMap[$poolId] ?? 1;
+
+            $match['round_label'] = $match['round'] == $maxRoundInThisPool
+                ? 'Final'
+                : $this->getRoundLabel($match['round'], $maxRoundInThisPool);
+
+            return $match;
+        })->toArray();
+
+        $final[] = [
+            'arena_name' => $entry['arena_name'],
+            'scheduled_date' => $entry['scheduled_date'],
+            'age_category_id' => $entry['age_category_id'],
+            'age_category_name' => $entry['age_category_name'],
+            'tournament_name' => $entry['tournament_name'],
+            'matches' => $matches,
+        ];
+    }
+
+    $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('exports.tanding-schedule', ['data' => $final]);
+
+    return $pdf->stream("Jadwal_{$arenaName}_{$scheduledDate}.pdf");
+
+}
+
+
 
 public function getSchedules($slug)
 {

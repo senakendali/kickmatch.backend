@@ -213,6 +213,10 @@ Route::get('/tournaments/{slug}/match-schedules/seni', [SeniMatchController::cla
 Route::get('/matches/reset-number/{tournamentId}', [MatchScheduleController::class, 'resetMatchNumber']);
 Route::get('/matches/reset-order/{tournamentId}', [MatchScheduleController::class, 'resetScheduleOrder']);
 
+// Export
+Route::get('/tanding/export-schedule', [MatchScheduleController::class, 'export']);
+
+
 
 
 
