@@ -346,7 +346,7 @@ public function getSchedules($slug)
         $matchData = [
             'pool_name' => $pool->name ?? 'Tanpa Pool',
             'round' => $round,
-            'match_number' => $match->match_number,
+            'match_number' => $detail->order,
             'match_order' => $detail->order,
             'match_time' => $detail->start_time,
             'participant_one' => $participantOneName,
@@ -427,10 +427,96 @@ private function getRoundLabel($round, $totalRounds)
 }
 
 
+// Tahap 1 untuk reorder match
+public function resetMatchNumber($tournamentId)
+{
+    
+
+    if (!$tournamentId) {
+        return response()->json(['message' => '❌ tournament_id wajib dikirim'], 400);
+    }
+
+    DB::statement('SET @match_number := 0');
+
+    DB::update("
+        UPDATE tournament_matches AS tm
+        JOIN (
+            SELECT tm.id, (@match_number := @match_number + 1) AS new_match_number
+            FROM tournament_matches tm
+            JOIN pools p ON tm.pool_id = p.id
+            WHERE p.tournament_id = ?
+              AND NOT (
+                  (tm.participant_1 IS NULL OR tm.participant_2 IS NULL)
+                  AND tm.winner_id IS NOT NULL
+                  AND tm.next_match_id IS NOT NULL
+              )
+            ORDER BY 
+                p.age_category_id ASC, 
+                tm.round ASC, 
+                tm.match_number ASC
+        ) AS ordered ON tm.id = ordered.id
+        SET tm.match_number = ordered.new_match_number
+    ", [$tournamentId]);
+
+    return response()->json([
+        'message' => '✅ Match number berhasil direset. Match BYE tidak diberi nomor.'
+    ]);
+}
 
 
+// Tahap 2 untuk reorder urutan di schedule
+public function resetScheduleOrder($id)
+{
+    $tournament = Tournament::where('id', $id)->firstOrFail();
 
-public function resetMatchNumber()
+    $query = MatchScheduleDetail::with([
+        'schedule.arena',
+        'schedule.tournament',
+        'tournamentMatch.participantOne.contingent',
+        'tournamentMatch.participantTwo.contingent',
+        'tournamentMatch.pool.categoryClass',
+        'tournamentMatch.pool.ageCategory',
+        'tournamentMatch.pool',
+        'tournamentMatch.previousMatches' => function ($q) {
+            $q->with('winner');
+        },
+    ])
+    ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
+    ->whereHas('tournamentMatch')
+    ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
+    ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
+    ->orderBy('pools.age_category_id')
+    ->orderBy('tournament_matches.round')
+    ->orderBy('tournament_matches.match_number')
+    ->select('match_schedule_details.*');
+
+    $details = $query->get();
+
+    $filtered = $details->filter(function ($detail) {
+        $match = $detail->tournamentMatch;
+        return !((
+            ($match->participant_1 === null || $match->participant_2 === null)
+            && $match->winner_id !== null
+            && $match->next_match_id !== null
+        ));
+    })->values();
+
+    DB::beginTransaction();
+    try {
+        foreach ($filtered as $i => $detail) {
+            $detail->order = $i + 1;
+            $detail->save();
+        }
+        DB::commit();
+        return response()->json(['message' => '✅ MatchScheduleDetail.order berhasil diurutkan ulang.']);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json(['message' => '❌ Gagal reset urutan.', 'error' => $e->getMessage()], 500);
+    }
+}
+
+
+public function resetMatchNumber000()
 {
     DB::statement('SET @match_number := 0');
 
