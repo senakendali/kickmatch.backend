@@ -209,6 +209,12 @@ Route::apiResource('match-schedules', MatchScheduleController::class);
 Route::get('/tournaments/{slug}/match-schedules/seni', [SeniMatchController::class, 'getSchedules']);
 
 
+// Resest Match Number
+Route::get('/matches/reset-number', [MatchScheduleController::class, 'resetMatchNumber']);
+
+
+
+
 
 
 //Auth

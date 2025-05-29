@@ -66,6 +66,14 @@ class TournamentMatch extends Model
         return $this->hasMany(TournamentMatch::class, 'next_match_id');
     }
 
+    // Match yang menunjuk ke pertandingan ini (digunakan untuk label "Pemenang dari Partai #X")
+    public function previousMatch()
+    {
+        return $this->hasOne(TournamentMatch::class, 'next_match_id')->orderBy('match_number');
+    }
+
+
+
 
 
 

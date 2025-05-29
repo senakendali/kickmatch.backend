@@ -142,7 +142,308 @@ class MatchScheduleController extends Controller
     return response()->json(['data' => $result]);
 }
 
+public function getSchedules_gokil($slug)
+{
+    $tournament = Tournament::where('slug', $slug)->firstOrFail();
+
+    $query = MatchScheduleDetail::with([
+        'schedule.arena',
+        'schedule.tournament',
+        'tournamentMatch.participantOne.contingent',
+        'tournamentMatch.participantTwo.contingent',
+        'tournamentMatch.pool.categoryClass',
+        'tournamentMatch.pool.ageCategory',
+        'tournamentMatch.pool',
+    ])
+    ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
+    ->whereHas('tournamentMatch')
+    ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
+    ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
+    ->orderBy('tournament_matches.match_number')
+    ->select('match_schedule_details.*');
+
+    if (request()->filled('arena_name')) {
+        $query->whereHas('schedule.arena', fn($q) =>
+            $q->where('name', request()->arena_name));
+    }
+
+    if (request()->filled('scheduled_date')) {
+        $query->whereHas('schedule', fn($q) =>
+            $q->where('scheduled_date', request()->scheduled_date));
+    }
+
+    if (request()->filled('pool_name')) {
+        $query->whereHas('tournamentMatch.pool', fn($q) =>
+            $q->where('name', request()->pool_name));
+    }
+
+    $details = $query->get();
+
+    $result = [];
+
+    foreach ($details as $detail) {
+        $arenaName = $detail->schedule->arena->name ?? 'Tanpa Arena';
+        $date = $detail->schedule->scheduled_date;
+        $pool = $detail->tournamentMatch->pool;
+        $round = $detail->tournamentMatch->round ?? 0;
+
+        $categoryClass = optional($pool->categoryClass);
+        $ageCategory = optional($pool->ageCategory);
+        $ageCategoryName = $ageCategory->name ?? 'Tanpa Usia';
+        $className = $ageCategoryName . ' ' . ($categoryClass->name ?? 'Tanpa Kelas');
+        $minWeight = $categoryClass->weight_min ?? null;
+        $maxWeight = $categoryClass->weight_max ?? null;
+
+        $matchData = [
+            'pool_name' => $pool->name ?? 'Tanpa Pool',
+            'round' => $round,
+            'match_number' => $detail->tournamentMatch->match_number,
+            'match_order' => $detail->order,
+            'match_time' => $detail->start_time,
+            'participant_one' => optional($detail->tournamentMatch->participantOne)->name,
+            'participant_two' => optional($detail->tournamentMatch->participantTwo)->name,
+            'contingent_one' => optional(optional($detail->tournamentMatch->participantOne)->contingent)->name,
+            'contingent_two' => optional(optional($detail->tournamentMatch->participantTwo)->contingent)->name,
+            'class_name' => $className . ' (' . $minWeight . ' KG - ' . $maxWeight . ' KG)',
+            'age_category_name' => $ageCategoryName,
+        ];
+
+        // Grup per arena, usia, dan tanggal
+        $groupKey = $arenaName . '||' . ($ageCategory->id ?? 0) . '||' . $date;
+
+        $result[$groupKey]['arena_name'] = $arenaName;
+        $result[$groupKey]['scheduled_date'] = $date;
+        $result[$groupKey]['age_category_id'] = $ageCategory->id ?? 0;
+        $result[$groupKey]['age_category_name'] = $ageCategoryName;
+        $result[$groupKey]['tournament_name'] = $tournament->name;
+        $result[$groupKey]['matches'][] = $matchData;
+    }
+
+    $final = [];
+
+    foreach ($result as $entry) {
+        $matches = collect($entry['matches'])
+            ->sortBy([
+                ['round', 'asc'],
+                ['match_number', 'asc'],
+            ])
+            ->values();
+
+        $globalMaxRound = $matches->max('round');
+
+        $matches = $matches->map(function ($match) use ($globalMaxRound) {
+            if ($match['round'] == $globalMaxRound) {
+                $match['round_label'] = 'Final';
+            } else {
+                $match['round_label'] = $this->getRoundLabel($match['round'], $globalMaxRound);
+            }
+            return $match;
+        })->toArray();
+
+        $final[] = [
+            'arena_name' => $entry['arena_name'],
+            'scheduled_date' => $entry['scheduled_date'],
+            'age_category_id' => $entry['age_category_id'],
+            'age_category_name' => $entry['age_category_name'],
+            'tournament_name' => $entry['tournament_name'],
+            'matches' => $matches,
+        ];
+    }
+
+    $final = collect($final)
+        ->sortBy([
+            ['arena_name', 'asc'],
+            ['age_category_id', 'asc'],
+            ['scheduled_date', 'asc'],
+        ])
+        ->values()
+        ->toArray();
+
+    return response()->json(['data' => $final]);
+}
+
 public function getSchedules($slug)
+{
+    $tournament = Tournament::where('slug', $slug)->firstOrFail();
+
+    $query = MatchScheduleDetail::with([
+        'schedule.arena',
+        'schedule.tournament',
+        'tournamentMatch.participantOne.contingent',
+        'tournamentMatch.participantTwo.contingent',
+        'tournamentMatch.pool.categoryClass',
+        'tournamentMatch.pool.ageCategory',
+        'tournamentMatch.pool',
+        'tournamentMatch.previousMatches' => function ($q) {
+            $q->with('winner');
+        },
+    ])
+    ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
+    ->whereHas('tournamentMatch')
+    ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
+    ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
+    ->orderBy('tournament_matches.match_number')
+    ->select('match_schedule_details.*');
+
+    if (request()->filled('arena_name')) {
+        $query->whereHas('schedule.arena', fn($q) =>
+            $q->where('name', request()->arena_name));
+    }
+
+    if (request()->filled('scheduled_date')) {
+        $query->whereHas('schedule', fn($q) =>
+            $q->where('scheduled_date', request()->scheduled_date));
+    }
+
+    if (request()->filled('pool_name')) {
+        $query->whereHas('tournamentMatch.pool', fn($q) =>
+            $q->where('name', request()->pool_name));
+    }
+
+    $details = $query->get();
+
+    $result = [];
+
+    foreach ($details as $detail) {
+        $arenaName = $detail->schedule->arena->name ?? 'Tanpa Arena';
+        $date = $detail->schedule->scheduled_date;
+        $pool = $detail->tournamentMatch->pool;
+        $round = $detail->tournamentMatch->round ?? 0;
+
+        $categoryClass = optional($pool->categoryClass);
+        $ageCategory = optional($pool->ageCategory);
+        $ageCategoryName = $ageCategory->name ?? 'Tanpa Usia';
+        $className = $ageCategoryName . ' ' . ($categoryClass->name ?? 'Tanpa Kelas');
+        $minWeight = $categoryClass->weight_min ?? null;
+        $maxWeight = $categoryClass->weight_max ?? null;
+
+        // Logic fallback: tampilkan "Pemenang dari Partai #X" kalau peserta belum ada
+        $match = $detail->tournamentMatch;
+        $participantOneName = optional($match->participantOne)->name;
+        $participantTwoName = optional($match->participantTwo)->name;
+
+        if (!$participantOneName) {
+            $fromMatch = $match->previousMatches->firstWhere('winner_id', '!=', null);
+            $participantOneName = $fromMatch ? 'Pemenang dari Partai #' . $fromMatch->match_number : '-';
+        }
+
+        if (!$participantTwoName) {
+            $fromMatch = $match->previousMatches->filter(fn($m) => $m->winner_id !== null)->skip(1)->first();
+            $participantTwoName = $fromMatch ? 'Pemenang dari Partai #' . $fromMatch->match_number : '-';
+        }
+
+        $matchData = [
+            'pool_name' => $pool->name ?? 'Tanpa Pool',
+            'round' => $round,
+            'match_number' => $match->match_number,
+            'match_order' => $detail->order,
+            'match_time' => $detail->start_time,
+            'participant_one' => $participantOneName,
+            'participant_two' => $participantTwoName,
+            'contingent_one' => optional(optional($match->participantOne)->contingent)->name,
+            'contingent_two' => optional(optional($match->participantTwo)->contingent)->name,
+            'class_name' => $className . ' (' . $minWeight . ' KG - ' . $maxWeight . ' KG)',
+            'age_category_name' => $ageCategoryName,
+        ];
+
+        $groupKey = $arenaName . '||' . ($ageCategory->id ?? 0) . '||' . $date;
+
+        $result[$groupKey]['arena_name'] = $arenaName;
+        $result[$groupKey]['scheduled_date'] = $date;
+        $result[$groupKey]['age_category_id'] = $ageCategory->id ?? 0;
+        $result[$groupKey]['age_category_name'] = $ageCategoryName;
+        $result[$groupKey]['tournament_name'] = $tournament->name;
+        $result[$groupKey]['matches'][] = $matchData;
+    }
+
+    $final = [];
+
+    foreach ($result as $entry) {
+        $matches = collect($entry['matches'])
+            ->sortBy([
+                ['round', 'asc'],
+                ['match_number', 'asc'],
+            ])
+            ->values();
+
+        $globalMaxRound = $matches->max('round');
+
+        $matches = $matches->map(function ($match) use ($globalMaxRound) {
+            if ($match['round'] == $globalMaxRound) {
+                $match['round_label'] = 'Final';
+            } else {
+                $match['round_label'] = $this->getRoundLabel($match['round'], $globalMaxRound);
+            }
+            return $match;
+        })->toArray();
+
+        $final[] = [
+            'arena_name' => $entry['arena_name'],
+            'scheduled_date' => $entry['scheduled_date'],
+            'age_category_id' => $entry['age_category_id'],
+            'age_category_name' => $entry['age_category_name'],
+            'tournament_name' => $entry['tournament_name'],
+            'matches' => $matches,
+        ];
+    }
+
+    $final = collect($final)
+        ->sortBy([
+            ['arena_name', 'asc'],
+            ['age_category_id', 'asc'],
+            ['scheduled_date', 'asc'],
+        ])
+        ->values()
+        ->toArray();
+
+    return response()->json(['data' => $final]);
+}
+
+
+
+private function getRoundLabel($round, $totalRounds)
+{
+    $offset = $totalRounds - $round;
+
+    return match (true) {
+        $offset === 1 => 'Semifinal',
+        $offset === 2 => '1/4 Final',
+        $offset === 3 => '1/8 Final',
+        $offset === 4 => '1/16 Final',
+        default => "Babak {$round}",
+    };
+}
+
+
+
+
+
+public function resetMatchNumber()
+{
+    DB::statement('SET @match_number := 0');
+
+    DB::update("
+        UPDATE tournament_matches AS tm
+        JOIN (
+            SELECT tm.id, (@match_number := @match_number + 1) AS new_match_number
+            FROM tournament_matches tm
+            JOIN pools p ON tm.pool_id = p.id
+            ORDER BY p.age_category_id ASC, tm.round ASC, tm.id ASC
+        ) AS ordered ON tm.id = ordered.id
+        SET tm.match_number = ordered.new_match_number
+    ");
+
+    return response()->json(['message' => '✅ Match number berhasil direset berdasarkan usia, round, dan id.']);
+}
+
+
+
+
+
+
+
+
+public function getSchedules_hh($slug)
 {
     $tournament = Tournament::where('slug', $slug)->firstOrFail();
 
@@ -271,21 +572,22 @@ public function getSchedules($slug)
 
 
 
-
-private function getRoundLabel($round, $totalRounds)
+private function getRoundLabel_______($round, $totalRounds)
 {
-    $labels = [
-        1 => 'Final',
-        2 => 'Semifinal',
-        3 => '1/4 Final',
-        4 => '1/8 Final',
-        5 => '1/16 Final',
-        6 => '1/32 Final',
-    ];
+    $offset = $totalRounds - $round;
 
-    $labelIndex = $totalRounds - $round + 1;
-    return $labels[$labelIndex] ?? "Babak {$round}";
+    return match (true) {
+        $totalRounds <= 1 => 'Final',
+        $offset === 1 => 'Semifinal',
+        $offset === 2 => '1/4 Final',
+        $offset === 3 => '1/8 Final',
+        $offset === 4 => '1/16 Final',
+        default => "Babak {$round}",
+    };
 }
+
+
+
 
 
 
