@@ -347,6 +347,7 @@ public function getSchedules($slug)
 
 
         $matchData = [
+            'pool_id' => $pool->id ?? null,
             'pool_name' => $pool->name ?? 'Tanpa Pool',
             'round' => $round,
             'match_number' => $detail->order,
@@ -362,6 +363,8 @@ public function getSchedules($slug)
         ];
 
         $groupKey = $arenaName . '||' . ($ageCategory->id ?? 0) . '||' . $date;
+        //$groupKey = $arenaName . '||' . ($ageCategory->id ?? 0) . '||' . $date . '||' . ($pool->id ?? 0);
+
 
         $result[$groupKey]['arena_name'] = $arenaName;
         $result[$groupKey]['scheduled_date'] = $date;
@@ -381,17 +384,25 @@ public function getSchedules($slug)
                 ['match_number', 'asc'],
             ])
             ->values();
+        
+        $roundMap = $this->getMaxRoundByPool($matches);
 
         $globalMaxRound = $matches->max('round');
 
-        $matches = $matches->map(function ($match) use ($globalMaxRound) {
-            if ($match['round'] == $globalMaxRound) {
+        $matches = $matches->map(function ($match) use ($roundMap) {
+            $poolId = $match['pool_id'] ?? null;
+            $maxRoundInThisPool = $roundMap[$poolId] ?? 1;
+
+            if ($match['round'] == $maxRoundInThisPool) {
                 $match['round_label'] = 'Final';
             } else {
-                $match['round_label'] = $this->getRoundLabel($match['round'], $globalMaxRound);
+                $match['round_label'] = $this->getRoundLabel($match['round'], $maxRoundInThisPool);
             }
+
             return $match;
         })->toArray();
+
+
 
         $final[] = [
             'arena_name' => $entry['arena_name'],
@@ -414,6 +425,14 @@ public function getSchedules($slug)
 
     return response()->json(['data' => $final]);
 }
+
+private function getMaxRoundByPool($matches)
+{
+    return $matches->groupBy('pool_id')->map(function ($group) {
+        return $group->max('round');
+    });
+}
+
 
 
 
