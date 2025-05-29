@@ -326,6 +326,7 @@ public function getSchedules($slug)
         $className = $ageCategoryName . ' ' . ($categoryClass->name ?? 'Tanpa Kelas');
         $minWeight = $categoryClass->weight_min ?? null;
         $maxWeight = $categoryClass->weight_max ?? null;
+        $gender = optional($match->participantOne)->gender == 'male' ? 'Putra' : 'Putri';
 
         // Logic fallback: tampilkan "Pemenang dari Partai #X" kalau peserta belum ada
         $participantOneName = optional($match->participantOne)->name;
@@ -355,8 +356,9 @@ public function getSchedules($slug)
             'participant_two' => $participantTwoName,
             'contingent_one' => optional(optional($match->participantOne)->contingent)->name,
             'contingent_two' => optional(optional($match->participantTwo)->contingent)->name,
-            'class_name' => $className . ' (' . $minWeight . ' KG - ' . $maxWeight . ' KG)',
+            'class_name' => $className . ' (' . $gender . ' )',
             'age_category_name' => $ageCategoryName,
+            'gender' => optional($match->participantOne)->gender ?? '-', // ⬅️ Tambahan ini
         ];
 
         $groupKey = $arenaName . '||' . ($ageCategory->id ?? 0) . '||' . $date;
@@ -386,7 +388,7 @@ public function getSchedules($slug)
             if ($match['round'] == $globalMaxRound) {
                 $match['round_label'] = 'Final';
             } else {
-                $match['round_label'] = $this->getRoundLabel($match['round'], $globalMaxRound);
+                $match['round_label'] = $this->getRoundLabel($match['round'], $globalMaxRound).' Jumlah round: '.$globalMaxRound;
             }
             return $match;
         })->toArray();
@@ -417,9 +419,15 @@ public function getSchedules($slug)
 
 private function getRoundLabel($round, $totalRounds)
 {
+    // Kalau cuma 1 ronde, langsung Final
+    if ($totalRounds === 1) {
+        return 'Final';
+    }
+
     $offset = $totalRounds - $round;
 
     return match (true) {
+        $offset === 0 => 'Final',
         $offset === 1 => 'Semifinal',
         $offset === 2 => '1/4 Final',
         $offset === 3 => '1/8 Final',
@@ -427,6 +435,7 @@ private function getRoundLabel($round, $totalRounds)
         default => "Babak {$round}",
     };
 }
+
 
 
 // Tahap 1 untuk reorder match
@@ -487,35 +496,43 @@ public function resetScheduleOrder($id)
     ->whereHas('tournamentMatch')
     ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
     ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
+    ->join('match_schedules', 'match_schedule_details.match_schedule_id', '=', 'match_schedules.id')
+    ->join('tournament_arena', 'match_schedules.tournament_arena_id', '=', 'tournament_arena.id')
+    ->orderBy('tournament_arena.name')
     ->orderBy('pools.age_category_id')
     ->orderBy('tournament_matches.round')
     ->orderBy('tournament_matches.match_number')
-    ->select('match_schedule_details.*');
+    ->select('match_schedule_details.*', 'tournament_arena.name as arena_name');
 
     $details = $query->get();
 
     $filtered = $details->filter(function ($detail) {
         $match = $detail->tournamentMatch;
-        return !((
-            ($match->participant_1 === null || $match->participant_2 === null)
+        return !((($match->participant_1 === null || $match->participant_2 === null)
             && $match->winner_id !== null
-            && $match->next_match_id !== null
-        ));
+            && $match->next_match_id !== null));
     })->values();
 
     DB::beginTransaction();
     try {
-        foreach ($filtered as $i => $detail) {
-            $detail->order = $i + 1;
-            $detail->save();
+        $grouped = $filtered->groupBy('arena_name');
+        foreach ($grouped as $arenaName => $group) {
+            foreach ($group->values() as $i => $detail) {
+                $detail->order = $i + 1;
+                $detail->save();
+            }
         }
         DB::commit();
-        return response()->json(['message' => '✅ MatchScheduleDetail.order berhasil diurutkan ulang.']);
+        return response()->json(['message' => '✅ Order berhasil diurut ulang per arena.']);
     } catch (\Exception $e) {
         DB::rollBack();
-        return response()->json(['message' => '❌ Gagal reset urutan.', 'error' => $e->getMessage()], 500);
+        return response()->json([
+            'message' => '❌ Gagal reset urutan.',
+            'error' => $e->getMessage()
+        ], 500);
     }
 }
+
 
 
 public function resetMatchNumber000()
