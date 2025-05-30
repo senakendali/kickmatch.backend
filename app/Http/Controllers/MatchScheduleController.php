@@ -687,9 +687,83 @@ public function BresetScheduleMatchOrder($tournamentId)
 }
 
 
-
-
 public function resetScheduleMatchOrder($tournamentId)
+{
+    $tournament = Tournament::findOrFail($tournamentId);
+
+    $roundOrderMap = [
+        'BYE' => 0,
+        'Penyisihan' => 1,
+        '1/8 Final' => 2,
+        '1/4 Final' => 3,
+        'Semifinal' => 4,
+        'Final' => 5,
+    ];
+
+    $details = MatchScheduleDetail::with([
+        'schedule.arena',
+        'tournamentMatch.pool.ageCategory',
+        'tournamentMatch.pool',
+        'tournamentMatch',
+        'tournamentMatch.participantOne',
+        'tournamentMatch.participantTwo',
+        'tournamentMatch.previousMatches.scheduleDetail',
+    ])
+    ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournamentId))
+    ->whereHas('tournamentMatch')
+    ->get();
+
+    $grouped = $details->groupBy(fn($d) => $d->schedule->arena->name ?? 'Tanpa Arena');
+
+    foreach ($grouped as $arenaName => $arenaDetails) {
+        $matchData = $arenaDetails->map(function ($detail) use ($roundOrderMap, $arenaDetails) {
+            $match = $detail->tournamentMatch;
+            $pool = $match->pool;
+            $ageCategoryId = optional($pool->ageCategory)->id ?? 0;
+            $poolId = $pool->id ?? null;
+
+            $maxRound = $arenaDetails
+                ->filter(fn($d) => optional($d->tournamentMatch)->pool_id === $poolId)
+                ->max(fn($d) => $d->tournamentMatch->round ?? 1) ?? 1;
+
+            $round = $match->round ?? 0;
+
+            if ($ageCategoryId === 1) {
+                $roundLabel = 'Final';
+            } elseif ((is_null($match->participantOne) || is_null($match->participantTwo)) && !is_null($detail->order)) {
+                $roundLabel = 'BYE';
+            } else {
+                $roundLabel = $this->getRoundLabel($round, $maxRound);
+            }
+
+            return [
+                'detail' => $detail,
+                'age_category_id' => $ageCategoryId,
+                'round_label' => $roundLabel,
+                'round_order' => $roundOrderMap[$roundLabel] ?? 99,
+                'match_order' => $detail->order ?? 9999,
+            ];
+        });
+
+        // Urutkan berdasarkan usia, babak, order lama
+        $sorted = $matchData->sortBy([
+            ['age_category_id', 'asc'],
+            ['round_order', 'asc'],
+            ['match_order', 'asc'],
+        ])->values();
+
+        foreach ($sorted as $index => $item) {
+            $item['detail']->order = $index + 1;
+            $item['detail']->round_label = $item['round_label']; // ✅ UPDATE LABEL
+            $item['detail']->save();
+        }
+    }
+
+    return response()->json(['message' => '✅ Urutan & babak pertandingan berhasil direset berdasarkan arena, usia, dan babak.']);
+}
+
+
+public function resetScheduleMatchOrder_ajib($tournamentId)
 {
     $tournament = Tournament::findOrFail($tournamentId);
 
