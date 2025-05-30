@@ -207,10 +207,7 @@ public function getSchedules($slug)
         $className = $ageCategoryName . ' ' . ($categoryClass->name ?? 'Tanpa Kelas');
         $minWeight = $categoryClass->weight_min ?? null;
         $maxWeight = $categoryClass->weight_max ?? null;
-        
-        $genderRaw = $categoryClass->gender ?? null;
-        $gender = $genderRaw === 'male' ? 'Putra' : ($genderRaw === 'female' ? 'Putri' : '-');
-
+        $gender = optional($match->participantOne)->gender == 'male' ? 'Putra' : 'Putri';
 
         // Logic fallback: tampilkan "Pemenang dari Partai #X" kalau peserta belum ada
         $participantOneName = optional($match->participantOne)->name;
