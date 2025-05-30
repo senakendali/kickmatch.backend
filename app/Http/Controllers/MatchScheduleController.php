@@ -399,6 +399,7 @@ public function getSchedules($slug)
         $matchData = [
             'pool_id' => $pool->id ?? null,
             'pool_name' => $pool->name ?? 'Tanpa Pool',
+             'age_category_id' => $ageCategory->id ?? null, // ✅ tambahin ini bro
             'round' => $round,
             'match_number' => $detail->order,
             'match_order' => $detail->order,
@@ -437,7 +438,25 @@ public function getSchedules($slug)
 
         $globalMaxRound = $matches->max('round');
 
+       /* $matches = $matches->map(function ($match) use ($roundMap) {
+            $poolId = $match['pool_id'] ?? null;
+            $maxRoundInThisPool = $roundMap[$poolId] ?? 1;
+
+            if ($match['round'] == $maxRoundInThisPool) {
+                $match['round_label'] = 'Final';
+            } else {
+                $match['round_label'] = $this->getRoundLabel($match['round'], $maxRoundInThisPool).' - '.$maxRoundInThisPool;
+            }
+
+            return $match;
+        })->toArray();*/
+
         $matches = $matches->map(function ($match) use ($roundMap) {
+            if (($match['age_category_id'] ?? null) == 1) {
+                $match['round_label'] = 'Final';
+                return $match;
+            }
+
             $poolId = $match['pool_id'] ?? null;
             $maxRoundInThisPool = $roundMap[$poolId] ?? 1;
 
@@ -449,6 +468,10 @@ public function getSchedules($slug)
 
             return $match;
         })->toArray();
+
+
+
+
 
 
 
@@ -803,12 +826,28 @@ public function getSchedules_____($slug)
     return response()->json(['data' => $final]);
 }
 
-private function getMaxRoundByPool($matches)
+private function getMaxRoundByPool__($matches)
 {
     return $matches->groupBy('pool_id')->map(function ($group) {
         return $group->max('round');
     });
 }
+
+private function getMaxRoundByPool($matches)
+{
+    return $matches->groupBy('pool_id')->map(function ($poolMatches) {
+        // Hitung jumlah pertandingan = jumlah peserta / 2
+        // Dari jumlah pertandingan, kita bisa balik ke jumlah peserta ideal
+        $totalMatch = $poolMatches->count();
+
+        // Estimasi jumlah peserta
+        $estimatedParticipants = $totalMatch + 1;
+
+        // Hitung berapa banyak ronde dari jumlah peserta ini (log2 dibulatkan ke atas)
+        return (int) ceil(log($estimatedParticipants, 2));
+    })->toArray();
+}
+
 
 
 
