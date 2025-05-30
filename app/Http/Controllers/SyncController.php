@@ -105,138 +105,143 @@ class SyncController extends Controller
     }
     
     public function matches(Request $request)
-    {
-        $tournamentSlug = $request->query('tournament');
-        $tournament = Tournament::where('slug', $tournamentSlug)->firstOrFail();
+{
+    $tournamentSlug = $request->query('tournament');
+    $tournament = Tournament::where('slug', $tournamentSlug)->firstOrFail();
 
-        $query = MatchScheduleDetail::with([
-            'schedule.arena',
-            'schedule.tournament',
-            'tournamentMatch.participantOne.contingent',
-            'tournamentMatch.participantTwo.contingent',
-            'tournamentMatch.pool.categoryClass',
-            'tournamentMatch.pool.ageCategory',
-            'tournamentMatch.pool',
-            'tournamentMatch.previousMatches.scheduleDetail',
-        ])
-        ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
-        ->whereHas('tournamentMatch')
-        ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
-        ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
-        ->orderBy('match_schedule_details.order')
-        ->select('match_schedule_details.*');
+    // Log isi request untuk debug
+    \Log::debug('📥 Request Params:', $request->all());
 
-        if (request()->filled('arena_name')) {
-            $query->whereHas('schedule.arena', fn($q) =>
-                $q->where('name', request()->arena_name));
-        }
+    $query = MatchScheduleDetail::with([
+        'schedule.arena',
+        'schedule.tournament',
+        'tournamentMatch.participantOne.contingent',
+        'tournamentMatch.participantTwo.contingent',
+        'tournamentMatch.pool.categoryClass',
+        'tournamentMatch.pool.ageCategory',
+        'tournamentMatch.pool',
+        'tournamentMatch.previousMatches.scheduleDetail',
+    ])
+    ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
+    ->whereHas('tournamentMatch')
+    ->orderBy('match_schedule_details.order'); // tanpa join tetap bisa urut
 
-        if (request()->filled('scheduled_date')) {
-            $query->whereHas('schedule', fn($q) =>
-                $q->where('scheduled_date', request()->scheduled_date));
-        }
-
-        if (request()->filled('pool_name')) {
-            $query->whereHas('tournamentMatch.pool', fn($q) =>
-                $q->where('name', request()->pool_name));
-        }
-
-        $details = $query->get();
-
-        $roundPriority = [
-            'BYE' => 0,
-            'Penyisihan' => 1,
-            '1/8 Final' => 2,
-            '1/4 Final' => 3,
-            'Semifinal' => 4,
-            'Final' => 5,
-        ];
-
-        $parentMap = [];
-        foreach ($details as $detail) {
-            $match = $detail->tournamentMatch;
-            if ($match->next_match_id) {
-                $parentMap[$match->next_match_id][] = $match->id;
-            }
-        }
-
-        $roundMap = $details->groupBy(fn($d) => $d->tournamentMatch->pool_id)->map(fn($group) => $group->max(fn($d) => $d->tournamentMatch->round));
-
-        $result = $details->map(function ($detail) use ($tournament, $roundPriority, $parentMap, $roundMap) {
-            $match = $detail->tournamentMatch;
-            $pool = $match->pool;
-
-            $ageCategory = optional($pool->ageCategory);
-            $categoryClass = optional($pool->categoryClass);
-
-            $participantOne = $match->participantOne;
-            $participantTwo = $match->participantTwo;
-
-            $participantOneName = optional($participantOne)->name;
-            $participantTwoName = optional($participantTwo)->name;
-
-            if (!$participantOneName) {
-                $fromMatch = $match->previousMatches->first();
-                $orderLabel = optional($fromMatch?->scheduleDetail)->order;
-                $participantOneName = ($orderLabel && is_numeric($orderLabel))
-                    ? 'Pemenang dari Partai #' . $orderLabel
-                    : 'Pemenang dari Pertandingan Sebelumnya';
-            }
-
-            if (!$participantTwoName) {
-                $fromMatch = $match->previousMatches->skip(1)->first();
-                $orderLabel = optional($fromMatch?->scheduleDetail)->order;
-                $participantTwoName = ($orderLabel && is_numeric($orderLabel))
-                    ? 'Pemenang dari Partai #' . $orderLabel
-                    : 'Pemenang dari Pertandingan Sebelumnya';
-            }
-
-            $maxRound = $roundMap[$pool->id] ?? 1;
-            $round = $match->round;
-
-            if (($pool->age_category_id ?? null) === 1) {
-                $label = 'Final';
-            } elseif (
-                (is_null($participantOne) || is_null($participantTwo)) &&
-                !is_null($detail->order)
-            ) {
-                $label = 'BYE';
-            } elseif ($round == $maxRound) {
-                $label = 'Final';
-            } else {
-                $label = $this->getRoundLabel($round, $maxRound);
-            }
-
-            $parents = $parentMap[$match->id] ?? [];
-
-            return [
-                'tournament_name' => $tournament->name,
-                'match_id' => $match->id,
-                'arena_name' => optional($detail->schedule?->arena)->name ?? '-',
-                'scheduled_date' => $detail->schedule?->scheduled_date,
-                'start_time' => $detail->start_time,
-                'pool_name' => $pool->name,
-                'class_name' => ($ageCategory->name ?? '-') . ' ' . ($categoryClass->name ?? '-') . ' (' . ($categoryClass->gender === 'male' ? 'Putra' : ($categoryClass->gender === 'female' ? 'Putri' : '-')) . ')',
-                'age_category_name' => $ageCategory->name ?? '-',
-                'gender' => $categoryClass->gender ?? '-',
-                'match_number' => $detail->order,
-                'match_order' => $detail->order,
-                'round_level' => $round,
-                'round_label' => $label,
-                'round_duration' => $pool->match_duration ?? 0,
-                'blue_id' => $participantOne?->id,
-                'blue_name' => $participantOneName,
-                'blue_contingent' => $participantOne?->contingent?->name ?? 'TBD',
-                'red_id' => $participantTwo?->id,
-                'red_name' => $participantTwoName,
-                'red_contingent' => $participantTwo?->contingent?->name ?? 'TBD',
-                'parent_match_red_id' => $parents[0] ?? null,
-                'parent_match_blue_id' => $parents[1] ?? null,
-            ];
-        });
-
-        return response()->json($result);
+    if ($request->filled('arena_name')) {
+        $query->whereHas('schedule.arena', fn($q) =>
+            $q->where('name', $request->arena_name));
     }
+
+    if ($request->filled('scheduled_date')) {
+        $query->whereHas('schedule', fn($q) =>
+            $q->where('scheduled_date', $request->scheduled_date));
+    }
+
+    if ($request->filled('pool_name')) {
+        $query->whereHas('tournamentMatch.pool', fn($q) =>
+            $q->where('name', $request->pool_name));
+    }
+
+    $details = $query->get();
+
+    // Debug arena yang muncul
+    \Log::debug('✅ Arena Loaded:', $details->pluck('schedule.arena.name')->unique());
+
+    $roundPriority = [
+        'BYE' => 0,
+        'Penyisihan' => 1,
+        '1/8 Final' => 2,
+        '1/4 Final' => 3,
+        'Semifinal' => 4,
+        'Final' => 5,
+    ];
+
+    $parentMap = [];
+    foreach ($details as $detail) {
+        $match = $detail->tournamentMatch;
+        if ($match->next_match_id) {
+            $parentMap[$match->next_match_id][] = $match->id;
+        }
+    }
+
+    $roundMap = $details->groupBy(fn($d) => $d->tournamentMatch->pool_id)
+        ->map(fn($group) => $group->max(fn($d) => $d->tournamentMatch->round));
+
+    $result = $details->map(function ($detail) use ($tournament, $roundPriority, $parentMap, $roundMap) {
+        $match = $detail->tournamentMatch;
+        $pool = $match->pool;
+
+        $ageCategory = optional($pool->ageCategory);
+        $categoryClass = optional($pool->categoryClass);
+
+        $participantOne = $match->participantOne;
+        $participantTwo = $match->participantTwo;
+
+        $participantOneName = optional($participantOne)->name;
+        $participantTwoName = optional($participantTwo)->name;
+
+        if (!$participantOneName) {
+            $fromMatch = $match->previousMatches->first();
+            $orderLabel = optional($fromMatch?->scheduleDetail)->order;
+            $participantOneName = ($orderLabel && is_numeric($orderLabel))
+                ? 'Pemenang dari Partai #' . $orderLabel
+                : 'Pemenang dari Pertandingan Sebelumnya';
+        }
+
+        if (!$participantTwoName) {
+            $fromMatch = $match->previousMatches->skip(1)->first();
+            $orderLabel = optional($fromMatch?->scheduleDetail)->order;
+            $participantTwoName = ($orderLabel && is_numeric($orderLabel))
+                ? 'Pemenang dari Partai #' . $orderLabel
+                : 'Pemenang dari Pertandingan Sebelumnya';
+        }
+
+        $maxRound = $roundMap[$pool->id] ?? 1;
+        $round = $match->round;
+
+        if (($pool->age_category_id ?? null) === 1) {
+            $label = 'Final';
+        } elseif (
+            (is_null($participantOne) || is_null($participantTwo)) &&
+            !is_null($detail->order)
+        ) {
+            $label = 'BYE';
+        } elseif ($round == $maxRound) {
+            $label = 'Final';
+        } else {
+            $label = $this->getRoundLabel($round, $maxRound);
+        }
+
+        $parents = $parentMap[$match->id] ?? [];
+
+        return [
+            'tournament_name' => $tournament->name,
+            'match_id' => $match->id,
+            'arena_name' => optional($detail->schedule?->arena)->name ?? '-',
+            'scheduled_date' => $detail->schedule?->scheduled_date,
+            'start_time' => $detail->start_time,
+            'pool_name' => $pool->name,
+            'class_name' => ($ageCategory->name ?? '-') . ' ' . ($categoryClass->name ?? '-') . ' (' . ($categoryClass->gender === 'male' ? 'Putra' : ($categoryClass->gender === 'female' ? 'Putri' : '-')) . ')',
+            'age_category_name' => $ageCategory->name ?? '-',
+            'gender' => $categoryClass->gender ?? '-',
+            'match_number' => $detail->order,
+            'match_order' => $detail->order,
+            'round_level' => $round,
+            'round_label' => $label,
+            'round_duration' => $pool->match_duration ?? 0,
+            'blue_id' => $participantOne?->id,
+            'blue_name' => $participantOneName,
+            'blue_contingent' => $participantOne?->contingent?->name ?? 'TBD',
+            'red_id' => $participantTwo?->id,
+            'red_name' => $participantTwoName,
+            'red_contingent' => $participantTwo?->contingent?->name ?? 'TBD',
+            'parent_match_red_id' => $parents[0] ?? null,
+            'parent_match_blue_id' => $parents[1] ?? null,
+        ];
+    });
+
+    return response()->json($result);
+}
+
 
 
 
