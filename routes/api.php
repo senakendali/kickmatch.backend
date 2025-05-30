@@ -215,6 +215,8 @@ Route::get('/matches/reset-order/{tournamentId}', [MatchScheduleController::clas
 
 // Export
 Route::get('/tanding/export-schedule', [MatchScheduleController::class, 'export']);
+Route::get('/seni/export-schedule', [SeniMatchController::class, 'export']);
+
 
 
 

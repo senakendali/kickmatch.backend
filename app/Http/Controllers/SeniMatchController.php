@@ -9,6 +9,7 @@ use App\Models\TeamMember;
 use App\Models\Tournament;
 use App\Models\MatchSchedule;
 use App\Models\MatchScheduleDetail;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -225,6 +226,122 @@ class SeniMatchController extends Controller
 
         return response()->json(['data' => $result]);
     }
+
+    public function export(Request $request)
+    {
+        $arena = $request->query('arena_name');
+        $date = $request->query('scheduled_date');
+
+        if (!$arena || !$date) {
+            return abort(400, 'Parameter arena_name dan scheduled_date wajib diisi');
+        }
+
+        $query = MatchScheduleDetail::with([
+            'schedule.arena',
+            'schedule.tournament',
+            'seniMatch.contingent',
+            'seniMatch.teamMember1',
+            'seniMatch.teamMember2',
+            'seniMatch.teamMember3',
+            'seniMatch.pool.ageCategory',
+            'seniMatch.matchCategory'
+        ])
+        ->whereHas('schedule', fn($q) => $q->where('scheduled_date', $date))
+        ->whereHas('schedule.arena', fn($q) => $q->where('name', $arena));
+
+        $details = $query->get();
+
+        // === Grouping sama seperti sebelumnya ===
+        $grouped = [];
+        foreach ($details as $detail) {
+            $match = $detail->seniMatch;
+            if (!$match) continue;
+
+            $arenaName = $detail->schedule->arena->name ?? 'Tanpa Arena';
+            $scheduledDate = $detail->schedule->scheduled_date ?? 'Tanpa Tanggal';
+            $poolName = $match->pool->name ?? 'Tanpa Pool';
+            $category = $match->matchCategory->name ?? '-';
+            $gender = $match->gender ?? '-';
+            $matchType = $match->match_type;
+            $ageCategory = optional($match->pool?->ageCategory)->name ?? '-';
+            $tournamentName = $detail->schedule->tournament->name ?? '-';
+
+            $groupKey = $arenaName . '||' . $scheduledDate;
+            $categoryKey = $category . '|' . $gender . '|' . $ageCategory;
+
+            $matchData = [
+                'id' => $match->id,
+                'match_order' => $detail->order,
+                'match_time' => $detail->start_time,
+                'contingent' => optional($match->contingent)?->only(['id', 'name']),
+                'team_member1' => optional($match->teamMember1)?->only(['id', 'name']),
+                'team_member2' => optional($match->teamMember2)?->only(['id', 'name']),
+                'team_member3' => optional($match->teamMember3)?->only(['id', 'name']),
+                'match_type' => $matchType,
+                'scheduled_date' => $scheduledDate,
+                'tournament_name' => $tournamentName,
+                'arena_name' => $arenaName,
+                'pool' => [
+                    'name' => $poolName,
+                    'age_category' => ['name' => $ageCategory],
+                ],
+            ];
+
+            $grouped[$groupKey]['arena_name'] = $arenaName;
+            $grouped[$groupKey]['scheduled_date'] = $scheduledDate;
+            $grouped[$groupKey]['tournament_name'] = $tournamentName;
+
+            $grouped[$groupKey]['groups'][$categoryKey]['category'] = $category;
+            $grouped[$groupKey]['groups'][$categoryKey]['gender'] = $gender;
+            $grouped[$groupKey]['groups'][$categoryKey]['age_category'] = $ageCategory;
+
+            $grouped[$groupKey]['groups'][$categoryKey]['pools'][$poolName]['name'] = $poolName;
+            $grouped[$groupKey]['groups'][$categoryKey]['pools'][$poolName]['matches'][] = $matchData;
+        }
+
+        $result = [];
+        foreach ($grouped as $entry) {
+            $groups = [];
+            foreach ($entry['groups'] as $group) {
+                $pools = [];
+                foreach ($group['pools'] as $pool) {
+                    $pools[] = [
+                        'name' => $pool['name'],
+                        'matches' => $pool['matches'],
+                    ];
+                }
+
+                $groups[] = [
+                    'category' => $group['category'],
+                    'gender' => $group['gender'],
+                    'age_category' => $group['age_category'],
+                    'pools' => $pools,
+                ];
+            }
+
+            $result[] = [
+                'arena_name' => $entry['arena_name'],
+                'scheduled_date' => $entry['scheduled_date'],
+                'tournament_name' => $entry['tournament_name'],
+                'groups' => $groups,
+            ];
+        }
+
+        $data = $result[0] ?? null;
+
+        if (!$data) {
+            return abort(404, 'Data tidak ditemukan');
+        }
+
+        $pdf = Pdf::loadView('exports.seni-schedule', compact('data'))->setPaper('a4', 'portrait');
+        $filename = 'jadwal-' . str_replace(' ', '-', strtolower($arena)) . '-' . $date . '.pdf';
+
+        //return $pdf->download($filename);
+        return $pdf->stream($filename);
+
+    }
+
+
 
 
 

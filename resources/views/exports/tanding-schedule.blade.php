@@ -13,6 +13,7 @@
         h4, h5 {
             margin: 0;
             padding: 0;
+            font-size:18px;
         }
 
         .text-center { text-align: center; }
@@ -108,7 +109,7 @@
                 </td>
                 <td style="width: 25%;"></td>
             </tr>
-            </table>
+        </table>
 
 
         <!-- Jadwal Tabel -->
