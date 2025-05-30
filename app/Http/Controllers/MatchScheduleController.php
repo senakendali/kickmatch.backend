@@ -438,6 +438,13 @@ public function getSchedules($slug)
                 $match['round_label'] = $this->getRoundLabel($match['round'], $maxRound);
             }
 
+            if($match['participant_two'] == '' && $match['round_label'] == '1/4 Final')
+            {
+                $match['participant_two'] = 'Jadwal BYE Semi';
+            }else{
+                 $match['participant_two'] = $match['participant_two'];
+            }
+
             return $match;
         });
 
