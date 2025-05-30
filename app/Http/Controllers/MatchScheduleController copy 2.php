@@ -322,17 +322,15 @@ public function export(Request $request)
         'tournamentMatch.pool.categoryClass',
         'tournamentMatch.pool.ageCategory',
         'tournamentMatch.pool',
-        'tournamentMatch.previousMatches' => fn($q) => $q->with('winner', 'scheduleDetail'),
+        'tournamentMatch.previousMatches' => fn($q) => $q->with('winner'),
     ])
     ->whereHas('schedule', function ($q) use ($scheduledDate, $arenaName) {
         $q->when($scheduledDate, fn($q) => $q->where('scheduled_date', $scheduledDate))
           ->whereHas('arena', fn($q) => $q->where('name', $arenaName));
     })
-    ->when($ageCategoryId, function ($q) use ($ageCategoryId) {
-        $q->whereHas('tournamentMatch.pool', fn($q) =>
-            $q->where('age_category_id', $ageCategoryId)
-        );
-    })
+    ->whereHas('tournamentMatch.pool', fn($q) =>
+        $q->where('age_category_id', $ageCategoryId)
+    )
     ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
     ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
     ->orderBy('tournament_matches.match_number')
@@ -347,7 +345,6 @@ public function export(Request $request)
     $tournament = $details->first()?->schedule?->tournament;
 
     $result = [];
-
     foreach ($details as $detail) {
         $match = $detail->tournamentMatch;
 
@@ -367,9 +364,7 @@ public function export(Request $request)
         $ageCategory = optional($pool->ageCategory);
         $ageCategoryName = $ageCategory->name ?? 'Tanpa Usia';
         $className = $ageCategoryName . ' ' . ($categoryClass->name ?? 'Tanpa Kelas');
-
-        $genderRaw = $categoryClass->gender ?? null;
-        $gender = $genderRaw === 'male' ? 'Putra' : ($genderRaw === 'female' ? 'Putri' : '-');
+        $gender = optional($match->participantOne)->gender == 'male' ? 'Putra' : 'Putri';
 
         $participantOneName = optional($match->participantOne)->name;
         $participantTwoName = optional($match->participantTwo)->name;
@@ -377,19 +372,13 @@ public function export(Request $request)
         if (!$participantOneName) {
             $fromMatch = $match->previousMatches->first();
             $orderLabel = optional($fromMatch?->scheduleDetail)->order;
-
-            $participantOneName = ($orderLabel && is_numeric($orderLabel))
-                ? 'Pemenang dari Partai #' . $orderLabel
-                : 'Pemenang dari Pertandingan Sebelumnya';
+            $participantOneName = $orderLabel ? 'Pemenang dari Partai #' . $orderLabel : '-';
         }
 
         if (!$participantTwoName) {
             $fromMatch = $match->previousMatches->skip(1)->first();
             $orderLabel = optional($fromMatch?->scheduleDetail)->order;
-
-            $participantTwoName = ($orderLabel && is_numeric($orderLabel))
-                ? 'Pemenang dari Partai #' . $orderLabel
-                : 'Pemenang dari Pertandingan Sebelumnya';
+            $participantTwoName = $orderLabel ? 'Pemenang dari Partai #' . $orderLabel : '-';
         }
 
         $matchData = [
@@ -403,9 +392,9 @@ public function export(Request $request)
             'participant_two' => $participantTwoName,
             'contingent_one' => optional(optional($match->participantOne)->contingent)->name,
             'contingent_two' => optional(optional($match->participantTwo)->contingent)->name,
-            'class_name' => $className . ' (' . $gender . ')',
+            'class_name' => $className . ' (' . $gender . ' )',
             'age_category_name' => $ageCategoryName,
-            'gender' => $genderRaw ?? '-',
+            'gender' => optional($match->participantOne)->gender ?? '-',
         ];
 
         $groupKey = $arenaName . '||' . ($ageCategory->id ?? 0) . '||' . $date;
@@ -422,20 +411,19 @@ public function export(Request $request)
 
     foreach ($result as $entry) {
         $matches = collect($entry['matches'])
-            ->sortBy([
-                ['round', 'asc'],
-                ['match_number', 'asc'],
-            ])
+            ->sortBy([['round', 'asc'], ['match_number', 'asc']])
             ->values();
 
-        $globalMaxRound = $matches->max('round');
+        $roundMap = $this->getMaxRoundByPool($matches);
 
-        $matches = $matches->map(function ($match) use ($globalMaxRound) {
-            if ($match['round'] == $globalMaxRound) {
-                $match['round_label'] = 'Final';
-            } else {
-                $match['round_label'] = $this->getRoundLabel($match['round'], $globalMaxRound);
-            }
+        $matches = $matches->map(function ($match) use ($roundMap) {
+            $poolId = $match['pool_id'] ?? null;
+            $maxRoundInThisPool = $roundMap[$poolId] ?? 1;
+
+            $match['round_label'] = $match['round'] == $maxRoundInThisPool
+                ? 'Final'
+                : $this->getRoundLabel($match['round'], $maxRoundInThisPool);
+
             return $match;
         })->toArray();
 
@@ -449,22 +437,10 @@ public function export(Request $request)
         ];
     }
 
-    // Sort agar konsisten
-    $final = collect($final)
-        ->sortBy([
-            ['arena_name', 'asc'],
-            ['age_category_id', 'asc'],
-            ['scheduled_date', 'asc'],
-        ])
-        ->values()
-        ->toArray();
-
-    // Kirim ke PDF
     $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('exports.tanding-schedule', ['data' => $final]);
 
     return $pdf->download("Jadwal_{$arenaName}_{$scheduledDate}.pdf");
 }
-
 
 
 
