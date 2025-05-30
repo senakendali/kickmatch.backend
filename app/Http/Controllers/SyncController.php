@@ -109,7 +109,8 @@ class SyncController extends Controller
         $tournamentSlug = $request->query('tournament');
         $tournament = Tournament::where('slug', $tournamentSlug)->firstOrFail();
 
-        $matches = MatchScheduleDetail::with([
+        // Ambil semua match schedule detail beserta relasi match-nya
+        $details = MatchScheduleDetail::with([
             'schedule.arena',
             'schedule.tournament',
             'tournamentMatch.pool.tournament',
@@ -128,10 +129,17 @@ class SyncController extends Controller
         ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
         ->orderBy('tournament_matches.match_number')
         ->select('match_schedule_details.*')
-        ->get()
-        ->pluck('tournamentMatch');
+        ->get();
 
-        // Parent map (buat parent_match_red/blue_id)
+        // Inject nilai order (match_order) ke dalam tournamentMatch
+        $matches = $details->map(function ($detail) {
+            $match = $detail->tournamentMatch;
+            $match->schedule_order = $detail->order;
+            $match->schedule_start_time = $detail->start_time;
+            return $match;
+        });
+
+        // Parent map
         $parentMap = [];
         foreach ($matches as $match) {
             if ($match->next_match_id) {
@@ -142,11 +150,11 @@ class SyncController extends Controller
             }
         }
 
-        // Max round per pool
+        // Hitung max round per pool
         $roundMap = $matches->groupBy(fn($m) => $m->pool_id)
             ->map(fn($group) => $group->max('round'));
 
-        // Build result
+        // Susun hasil akhir
         $result = $matches->map(function ($match) use ($tournament, $parentMap, $roundMap) {
             $isBye = (
                 ($match->participant_1 === null || $match->participant_2 === null)
@@ -160,7 +168,7 @@ class SyncController extends Controller
 
             $arena = optional($match->scheduleDetail?->schedule?->arena)->name;
             $date = optional($match->scheduleDetail?->schedule)->scheduled_date;
-            $start = optional($match->scheduleDetail?->schedule)->start_time;
+            $start = $match->schedule_start_time ?? null;
 
             $categoryClass = optional($pool->categoryClass);
             $ageCategory = optional($pool->ageCategory);
@@ -180,8 +188,8 @@ class SyncController extends Controller
                 'class_name' => $ageCategoryName . ' ' . $className . ' (' . $gender . ')',
                 'age_category_name' => $ageCategoryName,
                 'gender' => optional($match->participantOne)->gender ?? '-',
-                'match_number' => $match->match_number,
-                'match_order' => $match->match_number,
+                'match_number' => $match->schedule_order,
+                'match_order' => $match->schedule_order,
                 'round_level' => $round,
                 'round_label' => ($round == ($roundMap[$pool->id] ?? 1)) ? 'Final' : $this->getRoundLabel($round, $roundMap[$pool->id] ?? 1),
                 'round_duration' => $pool->match_duration ?? 0,
@@ -197,10 +205,11 @@ class SyncController extends Controller
                 'parent_match_red_id' => $parents[0] ?? null,
                 'parent_match_blue_id' => $parents[1] ?? null,
             ];
-        })->filter()->values();
+        })->filter()->values(); // Buang BYE
 
         return response()->json($result);
     }
+
 
 
 

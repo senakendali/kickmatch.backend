@@ -902,6 +902,76 @@ class DrawingController extends Controller
             ->with(['categoryClass', 'ageCategory'])
             ->get();
 
+        // Kelompokkan berdasarkan category_class_id dan age_category_id
+        $groupedByClassId = $teamMembers
+            ->filter(fn($tm) => $tm->category_class_id !== null)
+            ->groupBy('category_class_id');
+
+        $groupedByAgeId = $teamMembers
+            ->filter(fn($tm) => $tm->age_category_id !== null)
+            ->groupBy('age_category_id');
+
+        // Transformasi hasil pool
+        $pools = $pools->map(function ($pool) use ($groupedByClassId, $groupedByAgeId) {
+            $class = $pool->categoryClass;
+            $classId = $class?->id;
+            $ageCategoryId = $pool->age_category_id;
+
+            // ✅ Akses aman dengan Collection::get()
+            $available = $classId
+                ? ($groupedByClassId->get($classId)?->count() ?? 0)
+                : ($groupedByAgeId->get($ageCategoryId)?->count() ?? 0);
+
+            return [
+                'pool_id' => $pool->id,
+                'tournament_id' => $pool->tournament_id,
+                'tournament_name' => $pool->tournament->name ?? null,
+                'match_category' => $pool->matchCategory->name ?? null,
+                'age_category' => $pool->ageCategory->name ?? null,
+                'category_class' => [
+                    'id' => $classId,
+                    'name' => $class?->name,
+                    'gender' => $class?->gender,
+                    'weight_min' => $class?->weight_min,
+                    'weight_max' => $class?->weight_max,
+                    'available_athletes' => $available
+                ],
+                'name' => $pool->name,
+                'match_chart' => $pool->match_chart,
+                'matches_count' => $pool->matches_count,
+            ];
+        });
+
+        return response()->json([
+            'message' => 'Pools retrieved successfully',
+            'data' => $pools
+        ]);
+    }
+
+
+    public function getPools_()
+    {
+        $pools = Pool::with([
+                'tournament:id,name',
+                'matchCategory:id,name',
+                'ageCategory:id,name',
+                'categoryClass:id,name,gender,weight_min,weight_max,age_category_id',
+                'categoryClass.ageCategory:id,name'
+            ])
+            ->withCount('matches')
+            ->get();
+
+        $tournamentId = $pools->pluck('tournament_id')->first();
+        $matchCategoryId = $pools->pluck('match_category_id')->first();
+
+        // Ambil semua team members yang relevan
+        $teamMembers = TeamMember::whereHas('tournamentParticipants', function ($q) use ($tournamentId, $matchCategoryId) {
+                $q->where('tournament_id', $tournamentId)
+                ->when($matchCategoryId, fn($q) => $q->where('match_category_id', $matchCategoryId));
+            })
+            ->with(['categoryClass', 'ageCategory'])
+            ->get();
+
         // Kelompokkan berdasarkan category_class_id
         $groupedByClassId = $teamMembers
             ->filter(fn($tm) => $tm->category_class_id !== null)
