@@ -865,6 +865,10 @@ class TournamentMatchController extends Controller
             return $this->generateBracketForSix($poolId, $eligibleParticipants);
         }
 
+        if ($eligibleParticipants->count() === 9) {
+            return $this->generateBracketForNine($poolId, $eligibleParticipants);
+        }
+
         if ($eligibleParticipants->count() === 10) {
             return $this->generateBracketForTen($poolId, $eligibleParticipants);
         }
@@ -986,6 +990,110 @@ class TournamentMatchController extends Controller
             'rounds_generated' => $rounds,
         ]);
     }
+
+    private function generateBracketForNine($poolId, $participants)
+    {
+        $matchNumber = 1;
+
+        // Shuffle peserta
+        $shuffled = $participants->shuffle()->values();
+        $participantIds = $shuffled->pluck('id')->values();
+
+        // Preliminary (Round 1)
+        $prelim1 = $participantIds[0];
+        $prelim2 = $participantIds[1];
+
+        $preliminaryId = DB::table('tournament_matches')->insertGetId([
+            'pool_id' => $poolId,
+            'round' => 1,
+            'match_number' => $matchNumber++,
+            'participant_1' => $prelim1,
+            'participant_2' => $prelim2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // 7 peserta sisanya
+        $remaining = $participantIds->slice(2)->values();
+
+        $matchIds = [];
+
+        for ($i = 0; $i < 4; $i++) {
+            $p1 = null;
+            $p2 = null;
+
+            if ($i < 3) {
+                $p1 = $remaining[$i * 2] ?? null;
+                $p2 = $remaining[$i * 2 + 1] ?? null;
+            } else {
+                // Slot terakhir diisi oleh: pemenang preliminary vs peserta ke-9
+                $p2 = $remaining[6] ?? null;
+            }
+
+            $id = DB::table('tournament_matches')->insertGetId([
+                'pool_id' => $poolId,
+                'round' => 2,
+                'match_number' => $matchNumber++,
+                'participant_1' => $p1, // untuk match ke-4 ini null dulu (akan diupdate setelah)
+                'participant_2' => $p2,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $matchIds[] = $id;
+        }
+
+        // Semifinal (Round 3)
+        $semi1 = DB::table('tournament_matches')->insertGetId([
+            'pool_id' => $poolId,
+            'round' => 3,
+            'match_number' => $matchNumber++,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $semi2 = DB::table('tournament_matches')->insertGetId([
+            'pool_id' => $poolId,
+            'round' => 3,
+            'match_number' => $matchNumber++,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Final (Round 4)
+        $final = DB::table('tournament_matches')->insertGetId([
+            'pool_id' => $poolId,
+            'round' => 4,
+            'match_number' => $matchNumber++,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // ⬇️ Hubungkan next_match_id (Round 2 → Semifinal)
+        DB::table('tournament_matches')->where('id', $matchIds[0])->update(['next_match_id' => $semi1]);
+        DB::table('tournament_matches')->where('id', $matchIds[1])->update(['next_match_id' => $semi1]);
+        DB::table('tournament_matches')->where('id', $matchIds[2])->update(['next_match_id' => $semi2]);
+        DB::table('tournament_matches')->where('id', $matchIds[3])->update(['next_match_id' => $semi2]);
+
+        // ⬇️ Hubungkan semifinal → final
+        DB::table('tournament_matches')->where('id', $semi1)->update(['next_match_id' => $final]);
+        DB::table('tournament_matches')->where('id', $semi2)->update(['next_match_id' => $final]);
+
+        // ⬇️ Set next match dari preliminary (pemenangnya masuk ke match ke-4 round 2)
+        DB::table('tournament_matches')->where('id', $preliminaryId)->update([
+            'next_match_id' => $matchIds[3],
+        ]);
+
+        // ⬇️ Update match ke-4 (participant_1 = pemenang preliminary)
+        DB::table('tournament_matches')->where('id', $matchIds[3])->update([
+            'participant_1' => null // sementara null, akan diisi setelah pertandingan preliminary selesai
+        ]);
+
+        return response()->json(['message' => '✅ Bracket untuk 9 peserta berhasil dibuat.']);
+    }
+
+
+
+
 
     private function generateBracketForTen($poolId, $participants)
     {
