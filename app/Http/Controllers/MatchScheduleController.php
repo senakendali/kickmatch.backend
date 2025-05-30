@@ -420,44 +420,48 @@ public function export(Request $request)
 
     $final = [];
 
-    foreach ($result as $entry) {
-        $matches = collect($entry['matches'])
-            ->sortBy([
-                ['round', 'asc'],
-                ['match_number', 'asc'],
-            ])
-            ->values();
-
-        $globalMaxRound = $matches->max('round');
-
-        $matches = $matches->map(function ($match) use ($globalMaxRound) {
-            if ($match['round'] == $globalMaxRound) {
-                $match['round_label'] = 'Final';
-            } else {
-                $match['round_label'] = $this->getRoundLabel($match['round'], $globalMaxRound);
-            }
-            return $match;
-        })->toArray();
-
-        $final[] = [
-            'arena_name' => $entry['arena_name'],
-            'scheduled_date' => $entry['scheduled_date'],
-            'age_category_id' => $entry['age_category_id'],
-            'age_category_name' => $entry['age_category_name'],
-            'tournament_name' => $entry['tournament_name'],
-            'matches' => $matches,
-        ];
-    }
-
-    // Sort agar konsisten
-    $final = collect($final)
+foreach ($result as $entry) {
+    $matches = collect($entry['matches'])
         ->sortBy([
-            ['arena_name', 'asc'],
-            ['age_category_id', 'asc'],
-            ['scheduled_date', 'asc'],
+            ['round', 'asc'],
+            ['match_number', 'asc'],
         ])
-        ->values()
-        ->toArray();
+        ->values();
+
+    // Dapatkan max round per pool (samain dengan getSchedules)
+    $roundMap = $this->getMaxRoundByPool($matches);
+
+    $matches = $matches->map(function ($match) use ($roundMap) {
+        $poolId = $match['pool_id'] ?? null;
+        $maxRoundInThisPool = $roundMap[$poolId] ?? 1;
+
+        $match['round_label'] = $match['round'] == $maxRoundInThisPool
+            ? 'Final'
+            : $this->getRoundLabel($match['round'], $maxRoundInThisPool);
+
+        return $match;
+    })->toArray();
+
+    $final[] = [
+        'arena_name' => $entry['arena_name'],
+        'scheduled_date' => $entry['scheduled_date'],
+        'age_category_id' => $entry['age_category_id'],
+        'age_category_name' => $entry['age_category_name'],
+        'tournament_name' => $entry['tournament_name'],
+        'matches' => $matches,
+    ];
+}
+
+// Samakan sort final output dengan getSchedules
+$final = collect($final)
+    ->sortBy([
+        ['arena_name', 'asc'],
+        ['age_category_id', 'asc'],
+        ['scheduled_date', 'asc'],
+    ])
+    ->values()
+    ->toArray();
+
 
     // Kirim ke PDF
     $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('exports.tanding-schedule', ['data' => $final]);
