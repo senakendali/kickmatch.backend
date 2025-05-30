@@ -738,26 +738,18 @@ public function resetScheduleOrder($id)
     ->orderBy('pools.age_category_id')
     ->orderBy('match_schedules.scheduled_date')
     ->orderBy('tournament_matches.round')
-    ->orderBy('match_schedule_details.order') // ini untuk jaga urutan lama
+    ->orderBy('match_schedule_details.order')
     ->select('match_schedule_details.*', 'tournament_arena.name as arena_name', 'pools.age_category_id', 'match_schedules.scheduled_date');
 
     $details = $query->get();
 
-    $filtered = $details->filter(function ($detail) {
-        $match = $detail->tournamentMatch;
-        return !((($match->participant_1 === null || $match->participant_2 === null)
-            && $match->winner_id !== null
-            && $match->next_match_id !== null));
-    })->values();
+    // ❌ JANGAN FILTER BYE – harus tetap diset nomornya
+    // Supaya match selanjutnya bisa ambil "Pemenang dari Partai #x" dengan benar
 
     DB::beginTransaction();
     try {
-        // 🔄 Kelompokkan per arena ➜ usia ➜ tanggal
-        /*$grouped = $filtered->groupBy(function ($item) {
-            return $item->arena_name . '||' . $item->age_category_id . '||' . $item->scheduled_date;
-        });*/
-        $grouped = $filtered->groupBy('arena_name');
-
+        // Urutkan global per arena aja (bukan reset per kelas)
+        $grouped = $details->groupBy('arena_name');
 
         foreach ($grouped as $groupKey => $group) {
             foreach ($group->values() as $i => $detail) {
@@ -767,7 +759,7 @@ public function resetScheduleOrder($id)
         }
 
         DB::commit();
-        return response()->json(['message' => '✅ Order berhasil diurut ulang sesuai tampilan schedule.']);
+        return response()->json(['message' => '✅ Order berhasil diurut ulang termasuk match BYE.']);
     } catch (\Exception $e) {
         DB::rollBack();
         return response()->json([
@@ -776,6 +768,7 @@ public function resetScheduleOrder($id)
         ], 500);
     }
 }
+
 
 public function resetScheduleOrder_dipake($id)
 {
