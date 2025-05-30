@@ -2114,7 +2114,7 @@ private function generateFullPrestasiBracket__yang_dipake($poolId, $participants
         $matches = TournamentMatch::where('pool_id', $poolId)
             ->with(['participantOne.contingent', 'participantTwo.contingent', 'winner'])
             ->orderBy('round')
-            ->orderBy('match_number')
+            ->orderBy('id')
             ->get();
 
         $groupedRounds = [];
