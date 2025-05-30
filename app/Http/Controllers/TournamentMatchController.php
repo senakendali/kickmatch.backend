@@ -861,6 +861,12 @@ class TournamentMatchController extends Controller
             ->select('tournament_participants.id as tp_id', 'team_members.id as id', 'team_members.name')
             ->get();
 
+        
+            
+        if ($eligibleParticipants->count() === 5) {
+            return $this->generateBracketForFive($poolId, $eligibleParticipants);
+        }
+
         if ($eligibleParticipants->count() === 6) {
             return $this->generateBracketForSix($poolId, $eligibleParticipants);
         }
@@ -990,6 +996,79 @@ class TournamentMatchController extends Controller
             'rounds_generated' => $rounds,
         ]);
     }
+
+    private function generateBracketForFive($poolId, $participants)
+    {
+        $matchNumber = 1;
+
+        // Shuffle peserta
+        $shuffled = $participants->shuffle()->values();
+        $participantIds = $shuffled->pluck('id')->values();
+
+        // Preliminary (Round 1) → 2 peserta pertama
+        $prelim1 = $participantIds[0];
+        $prelim2 = $participantIds[1];
+
+        $preliminaryId = DB::table('tournament_matches')->insertGetId([
+            'pool_id' => $poolId,
+            'round' => 1,
+            'match_number' => $matchNumber++,
+            'participant_1' => $prelim1,
+            'participant_2' => $prelim2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Round 2: 2 pertandingan
+        // Match 1: pemenang preliminary vs peserta ke-3
+        $match2_1 = DB::table('tournament_matches')->insertGetId([
+            'pool_id' => $poolId,
+            'round' => 2,
+            'match_number' => $matchNumber++,
+            'participant_1' => null, // nanti diisi winner preliminary
+            'participant_2' => $participantIds[2],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Match 2: peserta ke-4 vs ke-5
+        $match2_2 = DB::table('tournament_matches')->insertGetId([
+            'pool_id' => $poolId,
+            'round' => 2,
+            'match_number' => $matchNumber++,
+            'participant_1' => $participantIds[3],
+            'participant_2' => $participantIds[4],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Semifinal (Round 3)
+        $semi = DB::table('tournament_matches')->insertGetId([
+            'pool_id' => $poolId,
+            'round' => 3,
+            'match_number' => $matchNumber++,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Final (Round 4)
+        $final = DB::table('tournament_matches')->insertGetId([
+            'pool_id' => $poolId,
+            'round' => 4,
+            'match_number' => $matchNumber++,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Set koneksi
+        DB::table('tournament_matches')->where('id', $match2_1)->update(['next_match_id' => $semi]);
+        DB::table('tournament_matches')->where('id', $match2_2)->update(['next_match_id' => $semi]);
+        DB::table('tournament_matches')->where('id', $semi)->update(['next_match_id' => $final]);
+        DB::table('tournament_matches')->where('id', $preliminaryId)->update(['next_match_id' => $match2_1]);
+
+        return response()->json(['message' => '✅ Bracket 5 peserta berhasil dibuat.']);
+    }
+
 
     private function generateBracketForNine($poolId, $participants)
     {
