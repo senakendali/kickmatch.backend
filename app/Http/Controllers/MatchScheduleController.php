@@ -359,7 +359,7 @@ public function getSchedules($slug)
             && $match->winner_id !== null
             && $match->next_match_id !== null
         );
-        if ($isByeMatch) continue;
+
 
         $arenaName = $detail->schedule->arena->name ?? 'Tanpa Arena';
         $date = $detail->schedule->scheduled_date;
@@ -452,13 +452,23 @@ public function getSchedules($slug)
         })->toArray();*/
 
         $matches = $matches->map(function ($match) use ($roundMap) {
+            $poolId = $match['pool_id'] ?? null;
+            $maxRoundInThisPool = $roundMap[$poolId] ?? 1;
+
+            // 🔹 Khusus Usia Dini (age_category_id == 1)
             if (($match['age_category_id'] ?? null) == 1) {
                 $match['round_label'] = 'Final';
                 return $match;
             }
 
-            $poolId = $match['pool_id'] ?? null;
-            $maxRoundInThisPool = $roundMap[$poolId] ?? 1;
+            // 🔹 BYE label
+            if (
+                (is_null($match['participant_one']) || is_null($match['participant_two'])) &&
+                !is_null($match['match_order']) // optional cek
+            ) {
+                $match['round_label'] = 'BYE';
+                return $match;
+            }
 
             if ($match['round'] == $maxRoundInThisPool) {
                 $match['round_label'] = 'Final';
@@ -468,6 +478,7 @@ public function getSchedules($slug)
 
             return $match;
         })->toArray();
+
 
 
 
