@@ -214,6 +214,8 @@ Route::get('/matches/reset-number/{tournamentId}', [MatchScheduleController::cla
 Route::get('/matches/reset-order/{tournamentId}', [MatchScheduleController::class, 'resetScheduleOrder']);
 Route::get('/matches/regenerate-order/{tournament_id}', [MatchScheduleController::class, 'regenerateMatchNumberAndSave']);
 Route::get('/matches/reorder/{tournament_id}', [MatchScheduleController::class, 'resetScheduleMatchOrder']);
+
+// Buat normalisasi jadwal
 Route::get('/matches/force-order/{tournament_id}', [MatchScheduleController::class, 'resetMatchOrderBasedOnGetSchedules']);
 Route::get('/matches/reorder-again/{tournament_id}', [MatchScheduleController::class, 'resetScheduleMatchOrderAgain']);
 
