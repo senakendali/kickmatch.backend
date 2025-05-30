@@ -500,6 +500,10 @@ class TournamentMatchController extends Controller
         TournamentParticipant::whereIn('team_member_id', $participantIds)
             ->where('tournament_id', $pool->tournament_id)
             ->update(['pool_id' => $poolId]);
+        if ($selected->count() === 5) { 
+            return $this->generateBracketForFive($poolId, $selected);
+        }
+            
 
         if ($selected->count() === 6) {
             $rounds = $this->generateDefaultSix($poolId, $selected);
