@@ -216,17 +216,24 @@ public function getSchedules($slug)
         $participantOneName = optional($match->participantOne)->name;
         $participantTwoName = optional($match->participantTwo)->name;
 
-       if (!$participantOneName) {
+      if (!$participantOneName) {
             $fromMatch = $match->previousMatches->first();
             $orderLabel = optional($fromMatch?->scheduleDetail)->order;
-            $participantOneName = $orderLabel ? 'Pemenang dari Partai #' . $orderLabel : '-';
+
+            $participantOneName = ($orderLabel && is_numeric($orderLabel))
+                ? 'Pemenang dari Partai #' . $orderLabel
+                : 'Pemenang dari Pertandingan Sebelumnya';
         }
 
         if (!$participantTwoName) {
             $fromMatch = $match->previousMatches->skip(1)->first();
             $orderLabel = optional($fromMatch?->scheduleDetail)->order;
-            $participantTwoName = $orderLabel ? 'Pemenang dari Partai #' . $orderLabel : '-';
+
+            $participantTwoName = ($orderLabel && is_numeric($orderLabel))
+                ? 'Pemenang dari Partai #' . $orderLabel
+                : 'Pemenang dari Pertandingan Sebelumnya';
         }
+
 
 
 
@@ -746,9 +753,11 @@ public function resetScheduleOrder($id)
     DB::beginTransaction();
     try {
         // 🔄 Kelompokkan per arena ➜ usia ➜ tanggal
-        $grouped = $filtered->groupBy(function ($item) {
+        /*$grouped = $filtered->groupBy(function ($item) {
             return $item->arena_name . '||' . $item->age_category_id . '||' . $item->scheduled_date;
-        });
+        });*/
+        $grouped = $filtered->groupBy('arena_name');
+
 
         foreach ($grouped as $groupKey => $group) {
             foreach ($group->values() as $i => $detail) {
