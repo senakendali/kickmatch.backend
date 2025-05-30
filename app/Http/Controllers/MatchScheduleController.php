@@ -438,9 +438,16 @@ public function getSchedules($slug)
                 $match['round_label'] = $this->getRoundLabel($match['round'], $maxRound);
             }
 
-            if($match['participant_two'] == '' && $match['round_label'] == '1/4 Final')
+            if($match['participant_two'] == 'Pemenang dari Pertandingan Sebelumnya' && $match['round_label'] == '1/4 Final')
             {
                 $match['participant_two'] = 'Jadwal BYE Semi';
+            }else{
+                 $match['participant_two'] = $match['participant_two'];
+            }
+
+             if($match['participant_two'] == 'Pemenang dari Pertandingan Sebelumnya' && $match['round_label'] == 'Semifinal')
+            {
+                $match['participant_two'] = 'Jadwal BYE Final';
             }else{
                  $match['participant_two'] = $match['participant_two'];
             }
