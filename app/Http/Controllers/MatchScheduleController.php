@@ -984,6 +984,75 @@ public function resetScheduleOrder($id)
     ->orderBy('match_schedules.scheduled_date')
     ->orderBy('tournament_matches.round')
     ->orderBy('match_schedule_details.order')
+    ->select('match_schedule_details.*', 'tournament_matches.participant_1', 'tournament_matches.participant_2', 'tournament_matches.winner_id', 'tournament_matches.next_match_id', 'tournament_arena.name as arena_name', 'pools.age_category_id', 'match_schedules.scheduled_date');
+
+    $details = $query->get();
+
+    DB::beginTransaction();
+    try {
+        // 🔥 Hapus semua match BYE dari schedule
+        $byeIds = $details->filter(function ($d) {
+            return (
+                ($d->participant_1 === null || $d->participant_2 === null)
+                && $d->winner_id !== null
+                && $d->next_match_id !== null
+            );
+        })->pluck('id');
+
+        if ($byeIds->count()) {
+            MatchScheduleDetail::whereIn('id', $byeIds)->delete();
+        }
+
+        // ✅ Refresh data setelah hapus BYE
+        $filteredDetails = $details->reject(fn($d) => $byeIds->contains($d->id));
+        $grouped = $filteredDetails->groupBy('arena_name');
+
+        // 🔁 Reset order per arena
+        foreach ($grouped as $group) {
+            foreach ($group->values() as $i => $detail) {
+                $detail->order = $i + 1;
+                $detail->save();
+            }
+        }
+
+        DB::commit();
+        return response()->json(['message' => '✅ Jadwal berhasil diurut ulang dan BYE dihapus.']);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json([
+            'message' => '❌ Gagal reset urutan.',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+public function resetScheduleOrderPOPO($id)
+{
+    $tournament = Tournament::where('id', $id)->firstOrFail();
+
+    $query = MatchScheduleDetail::with([
+        'schedule.arena',
+        'schedule.tournament',
+        'tournamentMatch.participantOne.contingent',
+        'tournamentMatch.participantTwo.contingent',
+        'tournamentMatch.pool.categoryClass',
+        'tournamentMatch.pool.ageCategory',
+        'tournamentMatch.pool',
+        'tournamentMatch.previousMatches' => function ($q) {
+            $q->with('winner');
+        },
+    ])
+    ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
+    ->whereHas('tournamentMatch')
+    ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
+    ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
+    ->join('match_schedules', 'match_schedule_details.match_schedule_id', '=', 'match_schedules.id')
+    ->join('tournament_arena', 'match_schedules.tournament_arena_id', '=', 'tournament_arena.id')
+    ->orderBy('tournament_arena.name')
+    ->orderBy('pools.age_category_id')
+    ->orderBy('match_schedules.scheduled_date')
+    ->orderBy('tournament_matches.round')
+    ->orderBy('match_schedule_details.order')
     ->select('match_schedule_details.*', 'tournament_arena.name as arena_name', 'pools.age_category_id', 'match_schedules.scheduled_date');
 
     $details = $query->get();
