@@ -21,6 +21,7 @@ return [
         'https://cjmanajemen.co.id',  // Additional frontend app URL
         'http://192.168.1.11:8000',
         'http://192.168.1.4:8000',
+        'http://192.168.1.2:8000',
         // Add more allowed origins here
     ],
 

@@ -3,81 +3,133 @@
 namespace App\Http\Controllers;
 
 use App\Models\TournamentMatch;
+use App\Models\Tournament;
+use App\Models\MatchScheduleDetail;
+use App\Models\MatchSchedule;
 use App\Models\SeniMatch;
 use Illuminate\Http\Request;
 
 class SyncController extends Controller
 {
     public function matches(Request $request)
-    {
-        $tournamentSlug = $request->query('tournament');
+{
+    $tournamentSlug = $request->query('tournament');
+    $tournament = Tournament::where('slug', $tournamentSlug)->firstOrFail();
 
-        // Ambil semua match yang sudah dijadwalkan
-        $matches = TournamentMatch::with([
-            'pool.tournament',
-            'pool.categoryClass',
-            'pool',
-            'scheduleDetail.schedule.arena',
-            'participantOne.contingent',
-            'participantTwo.contingent'
-        ])
-        ->whereHas('scheduleDetail.schedule') // hanya match yang sudah ada jadwal + arena
-        ->whereHas('pool.tournament', function ($q) use ($tournamentSlug) {
-            $q->where('slug', $tournamentSlug);
-        })
-        ->orderBy('round')
-        ->orderBy('match_number')
-        ->get();
+    $matches = TournamentMatch::with([
+        'pool.tournament',
+        'pool.categoryClass',
+        'pool.ageCategory',
+        'scheduleDetail.schedule.arena',
+        'participantOne.contingent',
+        'participantTwo.contingent',
+        'previousMatches.scheduleDetail'
+    ])
+    ->whereHas('scheduleDetail.schedule')
+    ->whereHas('pool.tournament', function ($q) use ($tournamentSlug) {
+        $q->where('slug', $tournamentSlug);
+    })
+    ->orderBy('round')
+    ->orderBy('match_number')
+    ->get();
 
-        // Mapping parent untuk parent_match_red_id & parent_match_blue_id
-        $parentMatchMap = [];
-        foreach ($matches as $match) {
-            if ($match->next_match_id) {
-                if (!isset($parentMatchMap[$match->next_match_id])) {
-                    $parentMatchMap[$match->next_match_id] = [];
-                }
-                $parentMatchMap[$match->next_match_id][] = $match->id;
+    // Mapping untuk parent
+    $parentMap = [];
+    foreach ($matches as $match) {
+        if ($match->next_match_id) {
+            if (!isset($parentMap[$match->next_match_id])) {
+                $parentMap[$match->next_match_id] = [];
             }
+            $parentMap[$match->next_match_id][] = $match->id;
         }
-
-        $result = $matches->map(function ($match) use ($parentMatchMap) {
-            // Mendapatkan parent untuk red dan blue participant
-            $parents = $parentMatchMap[$match->id] ?? [];
-
-            return [
-                'match_id' => $match->id,
-                'tournament' => $match->pool->tournament->name,
-                'arena' => $match->scheduleDetail?->schedule?->arena?->name,
-                'scheduled_date' => $match->scheduleDetail?->schedule?->scheduled_date,
-                'start_time' => $match->scheduleDetail?->schedule?->start_time,
-                'pool' => $match->pool->name,
-                'class' => $match->pool->categoryClass->name,
-                'round_level' => $match->round,
-                'match_number' => $match->match_number,
-                'match_duration' => $match->pool->match_duration,
-
-                // Cek apakah participant_1 ada, jika tidak set sebagai 'TBD'
-                'blue_id' => $match->participantOne ? $match->participantOne->id : null,
-                'blue_name' => $match->participantOne ? $match->participantOne->name : 'TBD',
-                'blue_contingent' => $match->participantOne ? $match->participantOne->contingent?->name : 'TBD',
-
-
-                // Cek apakah participant_2 ada, jika tidak set sebagai 'TBD'
-                'red_id' => $match->participantTwo ? $match->participantTwo->id : null,
-                'red_name' => $match->participantTwo ? $match->participantTwo->name : 'TBD',
-                'red_contingent' => $match->participantTwo ? $match->participantTwo->contingent?->name : 'TBD',
-
-
-                // Menambahkan parent match id, jika tidak ada maka null
-                'parent_match_red_id' => $parents[0] ?? null,
-                'parent_match_blue_id' => $parents[1] ?? null,
-            ];
-        });
-
-        return response()->json($result);
     }
 
-   public function seniMatches(Request $request)
+    // Hitung round tertinggi per pool
+    $roundMap = $matches->groupBy(fn($m) => $m->pool_id)
+        ->map(fn($group) => $group->max('round'));
+
+    // Susun hasil
+    $result = $matches->map(function ($match) use ($tournament, $parentMap, $roundMap) {
+        $isBye = (
+            ($match->participant_1 === null || $match->participant_2 === null)
+            && $match->winner_id !== null
+            && $match->next_match_id !== null
+        );
+        if ($isBye) return null;
+
+        $pool = $match->pool;
+        $round = $match->round ?? 0;
+
+        $arena = optional($match->scheduleDetail?->schedule?->arena)->name;
+        $date = optional($match->scheduleDetail?->schedule)->scheduled_date;
+        $start = optional($match->scheduleDetail?->schedule)->start_time;
+
+        $categoryClass = optional($pool->categoryClass);
+        $ageCategory = optional($pool->ageCategory);
+        $ageCategoryName = $ageCategory->name ?? 'Tanpa Usia';
+        $className = $categoryClass->name ?? 'Tanpa Kelas';
+        $gender = optional($match->participantOne)->gender == 'male' ? 'Putra' : 'Putri';
+
+        $parents = $parentMap[$match->id] ?? [];
+
+        return [
+            'tournament_name' => $tournament->name,
+            'match_id' => $match->id,
+            'arena_name' => $arena,
+            'scheduled_date' => $date,
+            'start_time' => $start,
+            'pool_name' => $pool->name,
+            'class_name' => $ageCategoryName . ' ' . $className . ' (' . $gender . ')',
+            'age_category_name' => $ageCategoryName,
+            'gender' => optional($match->participantOne)->gender ?? '-',
+            'match_number' => $match->match_number,
+            'match_order' => $match->match_number,
+            'round_level' => $round,
+            'round_label' => ($round == ($roundMap[$pool->id] ?? 1)) ? 'Final' : $this->getRoundLabel($round, $roundMap[$pool->id] ?? 1),
+            'round_duration' => $pool->match_duration ?? 0,
+
+            'blue_id' => $match->participantOne?->id,
+            'blue_name' => $match->participantOne?->name ?? 'TBD',
+            'blue_contingent' => $match->participantOne?->contingent?->name ?? 'TBD',
+
+            'red_id' => $match->participantTwo?->id,
+            'red_name' => $match->participantTwo?->name ?? 'TBD',
+            'red_contingent' => $match->participantTwo?->contingent?->name ?? 'TBD',
+
+            'parent_match_red_id' => $parents[0] ?? null,
+            'parent_match_blue_id' => $parents[1] ?? null,
+        ];
+    })->filter()->values(); // Buang yang null (BYE)
+
+    return response()->json($result);
+}
+
+
+    
+
+    private function getRoundLabel($round, $totalRounds)
+    {
+        // Kalau cuma 1 ronde, langsung Final
+        if ($totalRounds === 1) {
+            return 'Final';
+        }
+
+        $offset = $totalRounds - $round;
+
+        return match (true) {
+            $offset === 0 => 'Final',
+            $offset === 1 => 'Semifinal',
+            $offset === 2 => '1/4 Final',
+            $offset === 3 => '1/8 Final',
+            $offset === 4 => '1/16 Final',
+            default => "Babak {$round}",
+        };
+    }
+
+
+
+
+   public function seniMatches(Request $request) 
     {
         $tournamentSlug = $request->query('tournament');
 
@@ -93,7 +145,6 @@ class SyncController extends Controller
             ->get();
 
         $result = $matches->map(function ($match) {
-            // Ambil nama peserta langsung dari kolom team_member_X
             $nama1 = \App\Models\TeamMember::find($match->team_member_1)?->name;
             $nama2 = \App\Models\TeamMember::find($match->team_member_2)?->name;
             $nama3 = \App\Models\TeamMember::find($match->team_member_3)?->name;
@@ -110,7 +161,10 @@ class SyncController extends Controller
                 'match_date' => $match->scheduleDetail?->schedule?->scheduled_date,
                 'match_time' => $match->scheduleDetail?->schedule?->start_time,
                 'pool_name' => $match->pool->name,
-                'match_order' => $match->match_order,
+
+                // ✅ Ambil match_number dari order di schedule detail
+                'match_number' => $match->scheduleDetail?->order,
+                'match_order' => $match->scheduleDetail?->order,
 
                 'category' => match ($match->match_category_id) {
                     2 => 'Tunggal',
@@ -140,6 +194,7 @@ class SyncController extends Controller
 
         return response()->json($result);
     }
+
 
 
     public function updateTandingMatchStatus(Request $request)

@@ -143,7 +143,7 @@ class MatchScheduleController extends Controller
     return response()->json(['data' => $result]);
 }
 
-public function getSchedules_gokil($slug)
+public function getSchedules($slug)
 {
     $tournament = Tournament::where('slug', $slug)->firstOrFail();
 
@@ -155,6 +155,9 @@ public function getSchedules_gokil($slug)
         'tournamentMatch.pool.categoryClass',
         'tournamentMatch.pool.ageCategory',
         'tournamentMatch.pool',
+        'tournamentMatch.previousMatches' => function ($q) {
+            $q->with('winner');
+        },
     ])
     ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
     ->whereHas('tournamentMatch')
@@ -182,11 +185,21 @@ public function getSchedules_gokil($slug)
 
     $result = [];
 
-    foreach ($details as $detail) {
+     foreach ($details as $detail) {
+        $match = $detail->tournamentMatch;
+
+        // 🚫 Skip jika match adalah BYE:
+        $isByeMatch = (
+            ($match->participant_1 === null || $match->participant_2 === null)
+            && $match->winner_id !== null
+            && $match->next_match_id !== null
+        );
+        if ($isByeMatch) continue;
+
         $arenaName = $detail->schedule->arena->name ?? 'Tanpa Arena';
         $date = $detail->schedule->scheduled_date;
-        $pool = $detail->tournamentMatch->pool;
-        $round = $detail->tournamentMatch->round ?? 0;
+        $pool = $match->pool;
+        $round = $match->round ?? 0;
 
         $categoryClass = optional($pool->categoryClass);
         $ageCategory = optional($pool->ageCategory);
@@ -194,23 +207,45 @@ public function getSchedules_gokil($slug)
         $className = $ageCategoryName . ' ' . ($categoryClass->name ?? 'Tanpa Kelas');
         $minWeight = $categoryClass->weight_min ?? null;
         $maxWeight = $categoryClass->weight_max ?? null;
+        $gender = optional($match->participantOne)->gender == 'male' ? 'Putra' : 'Putri';
+
+        // Logic fallback: tampilkan "Pemenang dari Partai #X" kalau peserta belum ada
+        $participantOneName = optional($match->participantOne)->name;
+        $participantTwoName = optional($match->participantTwo)->name;
+
+       if (!$participantOneName) {
+            $fromMatch = $match->previousMatches->first();
+            $orderLabel = optional($fromMatch?->scheduleDetail)->order;
+            $participantOneName = $orderLabel ? 'Pemenang dari Partai #' . $orderLabel : '-';
+        }
+
+        if (!$participantTwoName) {
+            $fromMatch = $match->previousMatches->skip(1)->first();
+            $orderLabel = optional($fromMatch?->scheduleDetail)->order;
+            $participantTwoName = $orderLabel ? 'Pemenang dari Partai #' . $orderLabel : '-';
+        }
+
+
 
         $matchData = [
+            'pool_id' => $pool->id ?? null,
             'pool_name' => $pool->name ?? 'Tanpa Pool',
             'round' => $round,
-            'match_number' => $detail->tournamentMatch->match_number,
+            'match_number' => $detail->order,
             'match_order' => $detail->order,
             'match_time' => $detail->start_time,
-            'participant_one' => optional($detail->tournamentMatch->participantOne)->name,
-            'participant_two' => optional($detail->tournamentMatch->participantTwo)->name,
-            'contingent_one' => optional(optional($detail->tournamentMatch->participantOne)->contingent)->name,
-            'contingent_two' => optional(optional($detail->tournamentMatch->participantTwo)->contingent)->name,
-            'class_name' => $className . ' (' . $minWeight . ' KG - ' . $maxWeight . ' KG)',
+            'participant_one' => $participantOneName,
+            'participant_two' => $participantTwoName,
+            'contingent_one' => optional(optional($match->participantOne)->contingent)->name,
+            'contingent_two' => optional(optional($match->participantTwo)->contingent)->name,
+            'class_name' => $className . ' (' . $gender . ' )',
             'age_category_name' => $ageCategoryName,
+            'gender' => optional($match->participantOne)->gender ?? '-', // ⬅️ Tambahan ini
         ];
 
-        // Grup per arena, usia, dan tanggal
         $groupKey = $arenaName . '||' . ($ageCategory->id ?? 0) . '||' . $date;
+        //$groupKey = $arenaName . '||' . ($ageCategory->id ?? 0) . '||' . $date . '||' . ($pool->id ?? 0);
+
 
         $result[$groupKey]['arena_name'] = $arenaName;
         $result[$groupKey]['scheduled_date'] = $date;
@@ -399,7 +434,7 @@ public function export(Request $request)
 
 
 
-public function getSchedules($slug)
+public function getSchedules_____($slug)
 {
     $tournament = Tournament::where('slug', $slug)->firstOrFail();
 
@@ -592,17 +627,8 @@ private function getRoundLabel($round, $totalRounds)
     };
 }
 
-
-
-// Tahap 1 untuk reorder match
-public function resetMatchNumber($tournamentId)
+public function resetMatchNumber_($tournamentId)
 {
-    
-
-    if (!$tournamentId) {
-        return response()->json(['message' => '❌ tournament_id wajib dikirim'], 400);
-    }
-
     DB::statement('SET @match_number := 0');
 
     DB::update("
@@ -611,19 +637,18 @@ public function resetMatchNumber($tournamentId)
             SELECT tm.id, (@match_number := @match_number + 1) AS new_match_number
             FROM tournament_matches tm
             JOIN pools p ON tm.pool_id = p.id
-            WHERE p.tournament_id = ?
-              AND NOT (
-                  (tm.participant_1 IS NULL OR tm.participant_2 IS NULL)
-                  AND tm.winner_id IS NOT NULL
-                  AND tm.next_match_id IS NOT NULL
-              )
+            WHERE NOT (
+                (tm.participant_1 IS NULL OR tm.participant_2 IS NULL)
+                AND tm.winner_id IS NOT NULL
+                AND tm.next_match_id IS NOT NULL
+            )
             ORDER BY 
                 p.age_category_id ASC, 
                 tm.round ASC, 
                 tm.match_number ASC
         ) AS ordered ON tm.id = ordered.id
         SET tm.match_number = ordered.new_match_number
-    ", [$tournamentId]);
+    ");
 
     return response()->json([
         'message' => '✅ Match number berhasil direset. Match BYE tidak diberi nomor.'
@@ -631,8 +656,116 @@ public function resetMatchNumber($tournamentId)
 }
 
 
+
+// Tahap 1 untuk reorder match
+public function resetMatchNumber($tournamentId)
+{
+    if (!$tournamentId) {
+        return response()->json(['message' => '❌ tournament_id wajib dikirim'], 400);
+    }
+
+    DB::statement('SET @current_arena := NULL');
+    DB::statement('SET @match_number := 0');
+
+    DB::update("
+        UPDATE tournament_matches AS tm
+        JOIN (
+            SELECT tm.id,
+                   @match_number := IF(@current_arena = ms.tournament_arena_id, @match_number + 1, 1) AS new_match_number,
+                   @current_arena := ms.tournament_arena_id
+            FROM tournament_matches tm
+            JOIN pools p ON tm.pool_id = p.id
+            JOIN match_schedule_details msd ON msd.tournament_match_id = tm.id
+            JOIN match_schedules ms ON ms.id = msd.match_schedule_id
+            WHERE p.tournament_id = ?
+              AND NOT (
+                  (tm.participant_1 IS NULL OR tm.participant_2 IS NULL)
+                  AND tm.winner_id IS NOT NULL
+                  AND tm.next_match_id IS NOT NULL
+              )
+            ORDER BY 
+                ms.tournament_arena_id ASC,
+                tm.round ASC,
+                tm.id ASC
+        ) AS ordered ON tm.id = ordered.id
+        SET tm.match_number = ordered.new_match_number
+    ", [$tournamentId]);
+
+    return response()->json([
+        'message' => '✅ Match number berhasil direset berdasarkan tournament_arena_id dan round ASC.'
+    ]);
+}
+
+
+
+
+
+
 // Tahap 2 untuk reorder urutan di schedule
 public function resetScheduleOrder($id)
+{
+    $tournament = Tournament::where('id', $id)->firstOrFail();
+
+    $query = MatchScheduleDetail::with([
+        'schedule.arena',
+        'schedule.tournament',
+        'tournamentMatch.participantOne.contingent',
+        'tournamentMatch.participantTwo.contingent',
+        'tournamentMatch.pool.categoryClass',
+        'tournamentMatch.pool.ageCategory',
+        'tournamentMatch.pool',
+        'tournamentMatch.previousMatches' => function ($q) {
+            $q->with('winner');
+        },
+    ])
+    ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
+    ->whereHas('tournamentMatch')
+    ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
+    ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
+    ->join('match_schedules', 'match_schedule_details.match_schedule_id', '=', 'match_schedules.id')
+    ->join('tournament_arena', 'match_schedules.tournament_arena_id', '=', 'tournament_arena.id')
+    ->orderBy('tournament_arena.name')
+    ->orderBy('pools.age_category_id')
+    ->orderBy('match_schedules.scheduled_date')
+    ->orderBy('tournament_matches.round')
+    ->orderBy('match_schedule_details.order') // ini untuk jaga urutan lama
+    ->select('match_schedule_details.*', 'tournament_arena.name as arena_name', 'pools.age_category_id', 'match_schedules.scheduled_date');
+
+    $details = $query->get();
+
+    $filtered = $details->filter(function ($detail) {
+        $match = $detail->tournamentMatch;
+        return !((($match->participant_1 === null || $match->participant_2 === null)
+            && $match->winner_id !== null
+            && $match->next_match_id !== null));
+    })->values();
+
+    DB::beginTransaction();
+    try {
+        // 🔄 Kelompokkan per arena ➜ usia ➜ tanggal
+        $grouped = $filtered->groupBy(function ($item) {
+            return $item->arena_name . '||' . $item->age_category_id . '||' . $item->scheduled_date;
+        });
+
+        foreach ($grouped as $groupKey => $group) {
+            foreach ($group->values() as $i => $detail) {
+                $detail->order = $i + 1;
+                $detail->save();
+            }
+        }
+
+        DB::commit();
+        return response()->json(['message' => '✅ Order berhasil diurut ulang sesuai tampilan schedule.']);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json([
+            'message' => '❌ Gagal reset urutan.',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+public function resetScheduleOrder_dipake($id)
 {
     $tournament = Tournament::where('id', $id)->firstOrFail();
 
