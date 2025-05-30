@@ -109,7 +109,17 @@ class SyncController extends Controller
         $tournamentSlug = $request->query('tournament');
         $tournament = Tournament::where('slug', $tournamentSlug)->firstOrFail();
 
-        // Ambil semua match schedule detail beserta relasi match-nya
+        $roundPriority = [
+            '1/64 Final'     => 1,
+            '1/32 Final'     => 2,
+            '1/16 Final'     => 3,
+            '1/8 Final'      => 4,
+            'Perempat Final' => 5,
+            'Semifinal'      => 6,
+            'Final'          => 7,
+            'BYE'            => 8,
+        ];
+
         $details = MatchScheduleDetail::with([
             'schedule.arena',
             'schedule.tournament',
@@ -127,45 +137,59 @@ class SyncController extends Controller
         ->whereHas('tournamentMatch')
         ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
         ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
-        ->orderBy('tournament_matches.match_number')
         ->select('match_schedule_details.*')
         ->get();
 
-        // Inject nilai order (match_order) ke dalam tournamentMatch
-        $matches = $details->map(function ($detail) {
+        // Inject nilai order dan label babak
+        $details = $details->map(function ($detail) use ($roundPriority) {
             $match = $detail->tournamentMatch;
+            $pool = $match->pool;
+
+            $maxRound = $pool->matches->max('round') ?? 1;
+            $round = $match->round;
+
+            if (($pool->age_category_id ?? null) == 1) {
+                $label = 'Final';
+            } elseif ((is_null($match->participant_1) || is_null($match->participant_2)) && $match->winner_id !== null && $match->next_match_id !== null) {
+                $label = 'BYE';
+            } elseif ($round == $maxRound) {
+                $label = 'Final';
+            } else {
+                $label = $this->getRoundLabel($round, $maxRound);
+            }
+
             $match->schedule_order = $detail->order;
             $match->schedule_start_time = $detail->start_time;
+            $match->round_label = $label;
+            $match->round_priority = $roundPriority[$label] ?? 99;
             return $match;
         });
 
-        // Parent map
         $parentMap = [];
-        foreach ($matches as $match) {
+        foreach ($details as $match) {
             if ($match->next_match_id) {
-                if (!isset($parentMap[$match->next_match_id])) {
-                    $parentMap[$match->next_match_id] = [];
-                }
                 $parentMap[$match->next_match_id][] = $match->id;
             }
         }
 
-        // Hitung max round per pool
-        $roundMap = $matches->groupBy(fn($m) => $m->pool_id)
-            ->map(fn($group) => $group->max('round'));
+        $roundMap = $details->groupBy(fn($m) => $m->pool_id)->map(fn($group) => $group->max('round'));
 
-        // Susun hasil akhir
-        $result = $matches->map(function ($match) use ($tournament, $parentMap, $roundMap) {
-            $isBye = (
-                ($match->participant_1 === null || $match->participant_2 === null)
-                && $match->winner_id !== null
-                && $match->next_match_id !== null
-            );
-            if ($isBye) return null;
+        // Group dan urutkan berdasarkan arena, round_priority, usia, kelas
+        $sorted = $details->sortBy([
+            fn($a, $b) => ($a->scheduleDetail->schedule->arena->name ?? '') <=> ($b->scheduleDetail->schedule->arena->name ?? ''),
+            fn($a, $b) => $a->round_priority <=> $b->round_priority,
+            fn($a, $b) => ($a->pool->age_category_id ?? 99) <=> ($b->pool->age_category_id ?? 99),
+            fn($a, $b) => ($a->pool->category_class_id ?? 99) <=> ($b->pool->category_class_id ?? 99),
+            fn($a, $b) => $a->id <=> $b->id
+        ])->values();
 
+        // Reassign match_number
+        foreach ($sorted as $i => $match) {
+            $match->schedule_order = $i + 1;
+        }
+
+        $result = $sorted->map(function ($match) use ($tournament, $parentMap, $roundMap) {
             $pool = $match->pool;
-            $round = $match->round ?? 0;
-
             $arena = optional($match->scheduleDetail?->schedule?->arena)->name;
             $date = optional($match->scheduleDetail?->schedule)->scheduled_date;
             $start = $match->schedule_start_time ?? null;
@@ -190,22 +214,19 @@ class SyncController extends Controller
                 'gender' => optional($match->participantOne)->gender ?? '-',
                 'match_number' => $match->schedule_order,
                 'match_order' => $match->schedule_order,
-                'round_level' => $round,
-                'round_label' => ($round == ($roundMap[$pool->id] ?? 1)) ? 'Final' : $this->getRoundLabel($round, $roundMap[$pool->id] ?? 1),
+                'round_level' => $match->round,
+                'round_label' => $match->round_label,
                 'round_duration' => $pool->match_duration ?? 0,
-
                 'blue_id' => $match->participantOne?->id,
                 'blue_name' => $match->participantOne?->name ?? 'TBD',
                 'blue_contingent' => $match->participantOne?->contingent?->name ?? 'TBD',
-
                 'red_id' => $match->participantTwo?->id,
                 'red_name' => $match->participantTwo?->name ?? 'TBD',
                 'red_contingent' => $match->participantTwo?->contingent?->name ?? 'TBD',
-
                 'parent_match_red_id' => $parents[0] ?? null,
                 'parent_match_blue_id' => $parents[1] ?? null,
             ];
-        })->filter()->values(); // Buang BYE
+        });
 
         return response()->json($result);
     }
