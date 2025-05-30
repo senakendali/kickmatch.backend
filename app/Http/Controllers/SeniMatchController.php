@@ -336,8 +336,8 @@ class SeniMatchController extends Controller
         $pdf = Pdf::loadView('exports.seni-schedule', compact('data'))->setPaper('a4', 'portrait');
         $filename = 'jadwal-' . str_replace(' ', '-', strtolower($arena)) . '-' . $date . '.pdf';
 
-        //return $pdf->download($filename);
-        return $pdf->stream($filename);
+        return $pdf->download($filename);
+        //return $pdf->stream($filename);
 
     }
 
