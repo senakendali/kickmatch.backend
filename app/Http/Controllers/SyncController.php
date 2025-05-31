@@ -124,6 +124,7 @@ class SyncController extends Controller
             'tournamentMatch.pool.tournament',
             'tournamentMatch.pool.categoryClass',
             'tournamentMatch.pool.ageCategory',
+            'tournamentMatch.pool.matches',
             'tournamentMatch.participantOne.contingent',
             'tournamentMatch.participantTwo.contingent',
             'tournamentMatch.scheduleDetail.schedule.arena',
@@ -133,9 +134,6 @@ class SyncController extends Controller
             $q->where('tournament_id', $tournament->id)
         )
         ->whereHas('tournamentMatch')
-        ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
-        ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
-        ->select('match_schedule_details.*')
         ->get();
 
         $details = $details->map(function ($detail) use ($roundPriority) {
@@ -162,6 +160,7 @@ class SyncController extends Controller
             $match->schedule_start_time = $detail->start_time;
             $match->round_label = $label;
             $match->round_priority = $roundPriority[$label] ?? 99;
+            $match->scheduleDetail = $detail;
 
             return $match;
         });
@@ -229,6 +228,7 @@ class SyncController extends Controller
 
         return response()->json($result);
     }
+
 
 
 
