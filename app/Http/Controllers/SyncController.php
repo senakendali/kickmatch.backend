@@ -118,11 +118,12 @@ class SyncController extends Controller
         'Final' => 5,
     ];
 
-    // ✅ Ambil detail dengan relasi yang lengkap
     $details = MatchScheduleDetail::with([
-        'schedule.arena', // penting!
+        'schedule.arena',
+        'schedule.tournament',
         'tournamentMatch.pool.categoryClass',
         'tournamentMatch.pool.ageCategory',
+        'tournamentMatch.pool.matches', // ✅ PENTING untuk max('round')
         'tournamentMatch.participantOne.contingent',
         'tournamentMatch.participantTwo.contingent',
         'tournamentMatch.previousMatches.scheduleDetail',
@@ -131,7 +132,6 @@ class SyncController extends Controller
     ->whereHas('tournamentMatch')
     ->get();
 
-    // ✅ Mapping match dengan round label dan jadwal
     $details = $details->map(function ($detail) use ($roundPriority) {
         $match = $detail->tournamentMatch;
         $pool = $match->pool;
@@ -149,6 +149,7 @@ class SyncController extends Controller
             $label = $this->getRoundLabel($round, $maxRound);
         }
 
+        // Inject semua properti penting ke match agar bisa diakses saat sort/map
         $match->schedule_order = $detail->order;
         $match->schedule_start_time = $detail->start_time;
         $match->round_label = $label;
@@ -158,7 +159,6 @@ class SyncController extends Controller
         return $match;
     });
 
-    // ✅ Buat map untuk parent match
     $parentMap = [];
     foreach ($details as $match) {
         if ($match->next_match_id) {
@@ -166,7 +166,6 @@ class SyncController extends Controller
         }
     }
 
-    // ✅ Sort match
     $sorted = $details->sortBy([
         fn($a, $b) => ($a->scheduleDetail->schedule->arena->name ?? '') <=> ($b->scheduleDetail->schedule->arena->name ?? ''),
         fn($a, $b) => $a->round_priority <=> $b->round_priority,
@@ -175,7 +174,6 @@ class SyncController extends Controller
         fn($a, $b) => $a->id <=> $b->id
     ])->values();
 
-    // ✅ Generate response
     $result = $sorted->map(function ($match) use ($tournament, $parentMap) {
         $pool = $match->pool;
         $arena = optional($match->scheduleDetail->schedule?->arena)->name;
@@ -218,6 +216,7 @@ class SyncController extends Controller
 
     return response()->json($result);
 }
+
 
 
 
