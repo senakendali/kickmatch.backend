@@ -32,6 +32,8 @@ class MatchScheduleDetail extends Model
         return $this->belongsTo(MatchSchedule::class, 'match_schedule_id');
     }
 
+    
+
     public function seniMatch()
     {
         return $this->belongsTo(\App\Models\SeniMatch::class, 'seni_match_id');
