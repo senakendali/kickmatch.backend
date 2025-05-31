@@ -118,34 +118,20 @@ class SyncController extends Controller
         'Final' => 5,
     ];
 
-    $query = MatchScheduleDetail::with([
-        'schedule.tournament',
-        'tournamentMatch.pool.tournament',
+    // ✅ Ambil detail dengan relasi yang lengkap
+    $details = MatchScheduleDetail::with([
+        'schedule.arena', // penting!
         'tournamentMatch.pool.categoryClass',
         'tournamentMatch.pool.ageCategory',
         'tournamentMatch.participantOne.contingent',
         'tournamentMatch.participantTwo.contingent',
-        'tournamentMatch.scheduleDetail.schedule.arena',
         'tournamentMatch.previousMatches.scheduleDetail',
     ])
-        ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
-        ->whereHas('tournamentMatch')
-        ->join('match_schedules', 'match_schedule_details.schedule_id', '=', 'match_schedules.id')
-        ->join('tournament_arenas', 'match_schedules.tournament_arena_id', '=', 'tournament_arenas.id')
-        ->join('tournament_matches', 'match_schedule_details.tournament_match_id', '=', 'tournament_matches.id')
-        ->join('pools', 'tournament_matches.pool_id', '=', 'pools.id')
-        ->select('match_schedule_details.*');
+    ->whereHas('schedule', fn($q) => $q->where('tournament_id', $tournament->id))
+    ->whereHas('tournamentMatch')
+    ->get();
 
-    if ($request->filled('arena_name')) {
-        $query->where('tournament_arenas.name', $request->arena_name);
-    }
-
-    if ($request->filled('scheduled_date')) {
-        $query->where('match_schedules.scheduled_date', $request->scheduled_date);
-    }
-
-    $details = $query->get();
-
+    // ✅ Mapping match dengan round label dan jadwal
     $details = $details->map(function ($detail) use ($roundPriority) {
         $match = $detail->tournamentMatch;
         $pool = $match->pool;
@@ -167,10 +153,12 @@ class SyncController extends Controller
         $match->schedule_start_time = $detail->start_time;
         $match->round_label = $label;
         $match->round_priority = $roundPriority[$label] ?? 99;
+        $match->scheduleDetail = $detail;
 
         return $match;
     });
 
+    // ✅ Buat map untuk parent match
     $parentMap = [];
     foreach ($details as $match) {
         if ($match->next_match_id) {
@@ -178,6 +166,7 @@ class SyncController extends Controller
         }
     }
 
+    // ✅ Sort match
     $sorted = $details->sortBy([
         fn($a, $b) => ($a->scheduleDetail->schedule->arena->name ?? '') <=> ($b->scheduleDetail->schedule->arena->name ?? ''),
         fn($a, $b) => $a->round_priority <=> $b->round_priority,
@@ -186,21 +175,18 @@ class SyncController extends Controller
         fn($a, $b) => $a->id <=> $b->id
     ])->values();
 
-    foreach ($sorted as $i => $match) {
-        $match->schedule_order = $i + 1;
-    }
-
+    // ✅ Generate response
     $result = $sorted->map(function ($match) use ($tournament, $parentMap) {
         $pool = $match->pool;
-        $arena = optional($match->scheduleDetail?->schedule?->arena)->name;
-        $date = optional($match->scheduleDetail?->schedule)->scheduled_date;
+        $arena = optional($match->scheduleDetail->schedule?->arena)->name;
+        $date = optional($match->scheduleDetail->schedule)->scheduled_date;
         $start = $match->schedule_start_time ?? null;
 
         $categoryClass = optional($pool->categoryClass);
         $ageCategory = optional($pool->ageCategory);
         $ageCategoryName = $ageCategory->name ?? 'Tanpa Usia';
         $className = $categoryClass->name ?? 'Tanpa Kelas';
-        $gender = optional($match->participantOne)->gender == 'male' ? 'Putra' : 'Putri';
+        $gender = optional($match->participantOne)->gender === 'male' ? 'Putra' : 'Putri';
 
         $parents = $parentMap[$match->id] ?? [];
 
@@ -211,9 +197,9 @@ class SyncController extends Controller
             'scheduled_date' => $date,
             'start_time' => $start,
             'pool_name' => $pool->name,
-            'class_name' => $ageCategoryName . ' ' . $className . ' (' . $gender . ')',
+            'class_name' => "$ageCategoryName $className ($gender)",
             'age_category_name' => $ageCategoryName,
-            'gender' => optional($match->participantOne)->gender ?? '-',
+            'gender' => $gender,
             'match_number' => $match->schedule_order,
             'match_order' => $match->schedule_order,
             'round_level' => $match->round,
@@ -232,6 +218,7 @@ class SyncController extends Controller
 
     return response()->json($result);
 }
+
 
 
 
