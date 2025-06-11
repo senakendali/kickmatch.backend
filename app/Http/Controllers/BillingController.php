@@ -75,10 +75,85 @@ class BillingController extends Controller
         }
     }
 
-
-
-
     public function store(Request $request)
+    {
+        $user = auth()->user();
+
+        $data = $request->validate([
+            'tournament_id' => 'required|exists:tournaments,id',
+            'bank_name' => 'required|string',
+            'account_number' => 'required|string',
+            'account_name' => 'required|string',
+            'notes' => 'nullable|string',
+            'member_ids' => 'required|array',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            // Generate invoice number
+            $latestInvoice = Billing::latest('id')->first();
+            $nextNumber = $latestInvoice ? ((int)substr($latestInvoice->invoice_number, -4)) + 1 : 1;
+            $invoiceNumber = 'INV-' . date('Y') . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+
+            // Calculate total amount from members' registration fees
+            $totalAmount = 0;
+            $memberDetails = [];
+
+            foreach ($data['member_ids'] as $member_id) {
+                $member = TeamMember::with([
+                    'matchCategory.tournamentCategories',
+                    'contingent.tournamentContingents'
+                ])->findOrFail($member_id);
+
+                $tournamentId = $member->contingent?->tournamentContingents?->first()?->tournament_id;
+
+                $tournamentCategory = $member->matchCategory
+                    ?->tournamentCategories
+                    ?->firstWhere('tournament_id', $tournamentId);
+
+                $registrationFee = $tournamentCategory->registration_fee ?? 0;
+
+                $totalAmount += $registrationFee;
+
+                $memberDetails[] = [
+                    'team_member_id' => $member->id,
+                    'amount' => $registrationFee,
+                    'tournament_category_id' => $tournamentCategory->id ?? null,
+                ];
+            }
+
+            // Insert into Billing
+            $billing = Billing::create([
+                'invoice_number' => $invoiceNumber,
+                'tournament_id' => $data['tournament_id'],
+                'user_id' => $user->id,
+                'bank_name' => $data['bank_name'],
+                'account_number' => $data['account_number'],
+                'account_name' => $data['account_name'],
+                'amount' => $totalAmount,
+                'notes' => $data['notes'] ?? null,
+            ]);
+
+            // Insert Billing Details
+            foreach ($memberDetails as $detail) {
+                BillingDetail::create(array_merge(['billing_id' => $billing->id], $detail));
+            }
+
+            DB::commit();
+            return response()->json($billing->load('billingDetails'), 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+
+
+
+
+    public function store_asli(Request $request)
     {
         $user = auth()->user();
 
@@ -266,6 +341,79 @@ class BillingController extends Controller
     }
 
     public function update(Request $request, $id)
+    {
+        $user = auth()->user();
+
+        $data = $request->validate([
+            'tournament_id' => 'required|exists:tournaments,id',
+            'bank_name' => 'required|string',
+            'account_number' => 'required|string',
+            'account_name' => 'required|string',
+            'notes' => 'nullable|string',
+            'member_ids' => 'required|array',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            // Find the existing billing record
+            $billing = Billing::findOrFail($id);
+
+            // Recalculate total amount & prepare billing details
+            $totalAmount = 0;
+            $memberDetails = [];
+
+            foreach ($data['member_ids'] as $member_id) {
+                $member = TeamMember::with([
+                    'matchCategory.tournamentCategories',
+                    'contingent.tournamentContingents',
+                ])->findOrFail($member_id);
+
+                $tournamentId = $member->contingent?->tournamentContingents?->first()?->tournament_id;
+
+                $tournamentCategory = $member->matchCategory
+                    ?->tournamentCategories
+                    ?->firstWhere('tournament_id', $tournamentId);
+
+                $registrationFee = $tournamentCategory->registration_fee ?? 0;
+
+                $totalAmount += $registrationFee;
+
+                $memberDetails[] = [
+                    'team_member_id' => $member->id,
+                    'amount' => $registrationFee,
+                    'tournament_category_id' => $tournamentCategory->id ?? null,
+                ];
+            }
+
+            // Update billing info
+            $billing->update([
+                'tournament_id' => $data['tournament_id'],
+                'bank_name' => $data['bank_name'],
+                'account_number' => $data['account_number'],
+                'account_name' => $data['account_name'],
+                'amount' => $totalAmount,
+                'notes' => $data['notes'] ?? null,
+            ]);
+
+            // Reset billing details
+            BillingDetail::where('billing_id', $billing->id)->delete();
+
+            foreach ($memberDetails as $detail) {
+                BillingDetail::create(array_merge(['billing_id' => $billing->id], $detail));
+            }
+
+            DB::commit();
+            return response()->json($billing->load('billingDetails'), 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+
+    public function update__(Request $request, $id)
     {
         $user = auth()->user();
 
