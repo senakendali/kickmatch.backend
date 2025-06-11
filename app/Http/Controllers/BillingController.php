@@ -102,12 +102,29 @@ class BillingController extends Controller
             // Calculate total amount from members' registration fees
             $totalAmount = 0;
 
-            foreach ($data['member_ids'] as $member_id) {
+            /*foreach ($data['member_ids'] as $member_id) {
                 $member = TeamMember::with(['matchCategory.tournamentCategories'])
                     ->findOrFail($member_id);
 
                 $totalAmount += $member->matchCategory->tournamentCategories->first()->registration_fee ?? 0;
+            }*/
+
+            foreach ($data['member_ids'] as $member_id) {
+                $member = TeamMember::with(['matchCategory.tournamentCategories'])->findOrFail($member_id);
+
+                // Ambil tournament_id dari contingent-nya
+                $tournamentId = $member->contingent?->tournamentContingents?->first()?->tournament_id;
+
+                // Filter registration_fee yang sesuai tournament
+                $registrationFee = $member->matchCategory
+                    ?->tournamentCategories
+                    ?->where('tournament_id', $tournamentId)
+                    ->first()
+                    ?->registration_fee ?? 0;
+
+                $totalAmount += $registrationFee;
             }
+
 
             // Insert into the Billing table
             $billing = Billing::create([
@@ -143,9 +160,45 @@ class BillingController extends Controller
         }
     }
 
-
-
     public function show($id)
+    {
+        // Ambil billing + relasi yang dibutuhkan
+        $billing = Billing::with([
+            'billingDetails.teamMember.contingent.tournamentContingents',
+            'billingDetails.teamMember.championshipCategory',
+            'billingDetails.teamMember.matchCategory.tournamentCategories',
+            'billingDetails.teamMember.ageCategory', // ✅ Tambahin ini
+            'billingDetails.teamMember.categoryClass', // ✅ Tambahin ini juga
+        ])->findOrFail($id);
+
+        $billing->billingDetails->transform(function ($detail) use ($billing) {
+            $teamMember = $detail->teamMember;
+
+            // Ambil tournament_id dari billing (karena pasti sesuai dengan billingnya)
+            $tournamentId = $billing->tournament_id;
+
+            // Ambil registration_fee sesuai tournament_id
+            $registrationFee = optional($teamMember->matchCategory?->tournamentCategories
+                ?->where('tournament_id', $tournamentId)->first())->registration_fee;
+
+            return array_merge($teamMember->toArray(), [
+                'exists_in_billing_details' => true,
+                'billing_detail_id' => $detail->id,
+                'billing_id' => $detail->billing_id,
+                'amount' => $detail->amount,
+                'tournament_category_id' => $detail->tournament_category_id,
+                'registration_fee' => $registrationFee, // ✅ Tambahkan ini kalau mau ditampilkan juga
+            ]);
+        });
+
+        return response()->json($billing);
+    }
+
+
+
+
+
+    public function show_($id)
     {
         // Retrieve the billing and its details along with the necessary relationships
         $billing = Billing::with(['billingDetails.teamMember.contingent', 'billingDetails.teamMember.championshipCategory', 'billingDetails.teamMember.matchCategory.tournamentCategories'])
@@ -234,10 +287,24 @@ class BillingController extends Controller
             // Recalculate the total amount from the provided member IDs
             $totalAmount = 0;
             foreach ($data['member_ids'] as $member_id) {
-                $member = TeamMember::with(['matchCategory.tournamentCategories'])
-                    ->findOrFail($member_id);
-                $totalAmount += $member->matchCategory->tournamentCategories->first()->registration_fee ?? 0;
+                $member = TeamMember::with([
+                    'matchCategory.tournamentCategories',
+                    'contingent.tournamentContingents',
+                ])->findOrFail($member_id);
+
+                // Ambil tournament_id dari relasi contingent
+                $tournamentId = $member->contingent?->tournamentContingents?->first()?->tournament_id;
+
+                // Ambil registration_fee berdasarkan tournament_id
+                $registrationFee = $member->matchCategory
+                    ?->tournamentCategories
+                    ?->where('tournament_id', $tournamentId)
+                    ->first()
+                    ?->registration_fee ?? 0;
+
+                $totalAmount += $registrationFee;
             }
+
 
             // Update the billing record
             $billing->update([
