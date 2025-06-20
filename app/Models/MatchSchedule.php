@@ -16,6 +16,8 @@ class MatchSchedule extends Model
         'start_time',
         'end_time',
         'note',
+        'age_category_id', // tambahkan ini
+        'round_label',      // dan ini
     ];
 
     public function tournament()
@@ -27,6 +29,12 @@ class MatchSchedule extends Model
     {
         return $this->belongsTo(TournamentArena::class, 'tournament_arena_id');
     }
+
+    public function ageCategory()
+    {   
+        return $this->belongsTo(AgeCategory::class, 'age_category_id');
+    }
+
 
     public function details()
     {

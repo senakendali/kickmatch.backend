@@ -160,11 +160,13 @@ Route::post('/matches/{pool}/create-dummy', [DrawingController::class, 'createDu
 
 Route::get('pools', [DrawingController::class, 'getPools']);
 Route::get('pools/{poolId}/match-list', [DrawingController::class, 'getMatchList']);
+Route::get('pools/{poolId}', [DrawingController::class, 'detailPool']);
 Route::apiResource('drawings', DrawingController::class);
 
 //Generate Match
 Route::get('/pools/{poolId}/generate-bracket', [TournamentMatchController::class, 'generateBracket']);
 Route::get('/pools/{poolId}/regenerate-bracket', [TournamentMatchController::class, 'regenerateBracket']);
+Route::post('/pools/next', [TournamentMatchController::class, 'getNextPoolByTournament']);
 Route::get('/pools/{poolId}/matches', [TournamentMatchController::class, 'getMatches']);
 Route::get('/dummy/{poolId}/matches', [TournamentMatchController::class, 'dummy']);
 Route::get('/tournaments/{tournamentId}/matches', [TournamentMatchController::class, 'listMatches']);

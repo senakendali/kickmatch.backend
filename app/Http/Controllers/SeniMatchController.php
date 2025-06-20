@@ -17,45 +17,11 @@ use Illuminate\Support\Facades\DB;
 
 class SeniMatchController extends Controller
 {
-    public function index_()
-    {
-        $matches = SeniMatch::with([
-            'matchCategory',
-            'contingent',
-            'teamMember1',
-            'teamMember2',
-            'teamMember3',
-            'pool.ageCategory', // ✅ tambahkan ini
-        ])
-        ->orderBy('pool_id')
-        ->orderBy('match_order')
-        ->get();
-
-        $grouped = $matches->groupBy(fn($match) => $match->matchCategory->name . '|' . $match->gender)
-        ->map(function ($matchesByCategory, $key) {
-            [$category, $gender] = explode('|', $key);
-
-            return [
-                'category' => $category,
-                'gender' => $gender,
-                'pools' => $matchesByCategory->groupBy(fn($match) => $match->pool->name)
-                    ->map(function ($poolMatches, $poolName) {
-                        return [
-                            'name' => $poolName,
-                            'matches' => $poolMatches->values()
-                        ];
-                    })->values()
-            ];
-        })->values();
-
-
-        return response()->json($grouped);
-    }
-
     public function index(Request $request)
     {
         $tournamentId = $request->query('tournament_id');
 
+        // 🔍 Query dasar dengan eager loading
         $query = SeniMatch::with([
             'matchCategory',
             'contingent',
@@ -67,15 +33,16 @@ class SeniMatchController extends Controller
         ->orderBy('pool_id')
         ->orderBy('match_order');
 
-        // ⬇️ Filter berdasarkan tournament_id kalau dikirim
+        // ✅ Filter berdasarkan tournament_id jika ada
         if ($tournamentId) {
-            $query->whereHas('pool', function ($q) use ($tournamentId) {
-                $q->where('tournament_id', $tournamentId);
-            });
+            $query->whereHas('pool', fn($q) =>
+                $q->where('tournament_id', $tournamentId)
+            );
         }
 
         $matches = $query->get();
 
+        // Urutan umur yang digunakan untuk sorting akhir
         $ageOrder = [
             'Usia Dini 1' => 1,
             'Usia Dini 2' => 2,
@@ -84,31 +51,35 @@ class SeniMatchController extends Controller
             'Dewasa' => 5,
         ];
 
-
-        $grouped = $matches->groupBy(fn($match) => $match->matchCategory->name . '|' . $match->gender . '|' . $match->pool->ageCategory->name)
-            ->map(function ($matchesByCategory, $key) {
+        // 🔄 Grouping & Struktur Final
+        $grouped = $matches
+            ->groupBy(fn($match) =>
+                $match->matchCategory->name . '|' . $match->gender . '|' . $match->pool->ageCategory->name
+            )
+            ->map(function ($groupMatches, $key) {
                 [$category, $gender, $ageCategory] = explode('|', $key);
+
+                $pools = $groupMatches
+                    ->groupBy(fn($m) => $m->pool->name)
+                    ->map(fn($poolMatches, $poolName) => [
+                        'name' => $poolName,
+                        'matches' => $poolMatches->values()
+                    ])
+                    ->values();
 
                 return [
                     'age_category' => $ageCategory,
                     'category' => $category,
                     'gender' => $gender,
-                    'pools' => $matchesByCategory->groupBy(fn($match) => $match->pool->name)
-                        ->map(function ($poolMatches, $poolName) {
-                            return [
-                                'name' => $poolName,
-                                'matches' => $poolMatches->values()
-                            ];
-                        })->values()
+                    'pools' => $pools
                 ];
             })
-            ->sortBy(fn($item) => $ageOrder[$item['age_category']] ?? 99) // sort by defined order
+            ->sortBy(fn($item) => $ageOrder[$item['age_category']] ?? 99)
             ->values();
-
-
 
         return response()->json($grouped);
     }
+
 
    public function getSchedules($slug)
     {

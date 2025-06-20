@@ -13,6 +13,7 @@ class MatchScheduleDetail extends Model
         'tournament_match_id',
         'seni_match_id',
         'order',
+        'round_label',
         'start_time',
         'note',
     ];

@@ -217,7 +217,7 @@ class DrawingController extends Controller
             'subdistrict_id' => 321714,
             'ward_id' => 3217142009,
             'address' => $faker->address,
-            'championship_category_id' => 2, // Seni
+            'championship_category_id' => $original->championship_category_id, // Seni
             'match_category_id' => $matchCategoryId,
             'age_category_id' => $ageCategoryId,
             'category_class_id' => $categoryClassId,
@@ -879,19 +879,30 @@ class DrawingController extends Controller
         ]);
     }
 
-    public function getPools()
+    public function getPools(Request $request)
     {
-        $pools = Pool::with([
-                'tournament:id,name',
-                'matchCategory:id,name',
-                'ageCategory:id,name',
-                'categoryClass:id,name,gender,weight_min,weight_max,age_category_id',
-                'categoryClass.ageCategory:id,name'
-            ])
-            ->withCount('matches')
-            ->get();
+        // Ambil tournament_id dari query jika ada
+        $filterTournamentId = $request->query('tournament_id');
 
-        $tournamentId = $pools->pluck('tournament_id')->first();
+        // Query pool + relasi
+        $poolQuery = Pool::with([
+            'tournament:id,name',
+            'matchCategory:id,name',
+            'ageCategory:id,name',
+            'categoryClass:id,name,gender,weight_min,weight_max,age_category_id',
+            'categoryClass.ageCategory:id,name'
+        ])
+        ->withCount('matches');
+
+        // Apply filter jika tournament_id tersedia
+        if ($filterTournamentId) {
+            $poolQuery->where('tournament_id', $filterTournamentId);
+        }
+
+        $pools = $poolQuery->get();
+
+        // Ambil satu id turnamen & match_category (untuk ambil peserta relevan)
+        $tournamentId = $filterTournamentId ?: $pools->pluck('tournament_id')->first();
         $matchCategoryId = $pools->pluck('match_category_id')->first();
 
         // Ambil semua team members yang relevan
@@ -917,7 +928,6 @@ class DrawingController extends Controller
             $classId = $class?->id;
             $ageCategoryId = $pool->age_category_id;
 
-            // ✅ Akses aman dengan Collection::get()
             $available = $classId
                 ? ($groupedByClassId->get($classId)?->count() ?? 0)
                 : ($groupedByAgeId->get($ageCategoryId)?->count() ?? 0);
@@ -947,83 +957,6 @@ class DrawingController extends Controller
             'data' => $pools
         ]);
     }
-
-
-    public function getPools_()
-    {
-        $pools = Pool::with([
-                'tournament:id,name',
-                'matchCategory:id,name',
-                'ageCategory:id,name',
-                'categoryClass:id,name,gender,weight_min,weight_max,age_category_id',
-                'categoryClass.ageCategory:id,name'
-            ])
-            ->withCount('matches')
-            ->get();
-
-        $tournamentId = $pools->pluck('tournament_id')->first();
-        $matchCategoryId = $pools->pluck('match_category_id')->first();
-
-        // Ambil semua team members yang relevan
-        $teamMembers = TeamMember::whereHas('tournamentParticipants', function ($q) use ($tournamentId, $matchCategoryId) {
-                $q->where('tournament_id', $tournamentId)
-                ->when($matchCategoryId, fn($q) => $q->where('match_category_id', $matchCategoryId));
-            })
-            ->with(['categoryClass', 'ageCategory'])
-            ->get();
-
-        // Kelompokkan berdasarkan category_class_id
-        $groupedByClassId = $teamMembers
-            ->filter(fn($tm) => $tm->category_class_id !== null)
-            ->groupBy('category_class_id');
-
-        // Kelompokkan berdasarkan age_category_id
-        $groupedByAgeId = $teamMembers
-            ->filter(fn($tm) => $tm->age_category_id !== null)
-            ->groupBy('age_category_id');
-
-        // Transformasi hasil pool
-        $pools = $pools->map(function ($pool) use ($groupedByClassId, $groupedByAgeId) {
-            $class = $pool->categoryClass;
-            $classId = $class?->id;
-            $ageCategoryId = $pool->age_category_id;
-
-            $available = $classId
-                ? ($groupedByClassId[$classId]->count() ?? 0)
-                : ($groupedByAgeId[$ageCategoryId]->count() ?? 0);
-
-            return [
-                'pool_id' => $pool->id,
-                'tournament_id' => $pool->tournament_id,
-                'tournament_name' => $pool->tournament->name ?? null,
-                'match_category' => $pool->matchCategory->name ?? null,
-                'age_category' => $pool->ageCategory->name ?? null,
-                'category_class' => [
-                    'id' => $classId,
-                    'name' => $class?->name,
-                    'gender' => $class?->gender,
-                    'weight_min' => $class?->weight_min,
-                    'weight_max' => $class?->weight_max,
-                    'available_athletes' => $available
-                ],
-                'name' => $pool->name,
-                'match_chart' => $pool->match_chart,
-                'matches_count' => $pool->matches_count,
-            ];
-        });
-
-        return response()->json([
-            'message' => 'Pools retrieved successfully',
-            'data' => $pools
-        ]);
-    }
-
-
-
-
-
-
-
 
     public function getMatchList($poolId)
     {
@@ -1238,6 +1171,29 @@ class DrawingController extends Controller
     {
         // Implementasi Show jika diperlukan
     }
+
+   public function detailPool($id)
+    {
+        $pool = Pool::with([
+            'ageCategory:id,name',
+            'categoryClass:id,name,gender,weight_min,weight_max',
+            'matchCategory:id,name',
+        ])->findOrFail($id);
+
+        return response()->json([
+            'id' => $pool->id,
+            'pool_name' => $pool->name,
+            'age_category_name' => $pool->ageCategory?->name,
+            'class_name' => $pool->categoryClass?->name,
+            'gender' => $pool->categoryClass?->gender,
+            'weight_min' => $pool->categoryClass?->weight_min,
+            'weight_max' => $pool->categoryClass?->weight_max,
+            'match_category_name' => $pool->matchCategory?->name,
+        ]);
+    }
+
+
+
 
     public function update(Request $request, $id)
     {
