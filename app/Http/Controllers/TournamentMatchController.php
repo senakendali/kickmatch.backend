@@ -1246,7 +1246,7 @@ class TournamentMatchController extends Controller
         ]);
     }
 
-    private function generateSingleElimination($tournamentId, $poolId, $participants, $matchChart)
+   private function generateSingleElimination($tournamentId, $poolId, $participants, $matchChart)
     {
         TournamentMatch::where('pool_id', $poolId)->delete();
 
@@ -1280,6 +1280,12 @@ class TournamentMatchController extends Controller
         TournamentParticipant::whereIn('team_member_id', $participantIds)
             ->where('tournament_id', $tournamentId)
             ->update(['pool_id' => $poolId]);
+
+        // ❗️Tandai warning jika peserta kurang dari ideal
+        $warning = null;
+        if ($selectedParticipants->count() < $maxParticipantCount) {
+            $warning = "Peserta tidak ideal: ditemukan " . $selectedParticipants->count() . " dari $maxParticipantCount.";
+        }
 
         $totalRounds = (int) log($matchChart, 2);
         $matchNumber = 1;
@@ -1380,12 +1386,14 @@ class TournamentMatchController extends Controller
 
         return response()->json([
             'message' => '✅ Bracket eliminasi tunggal berhasil dibuat.',
+            'warning' => $warning,
             'rounds' => TournamentMatch::where('pool_id', $poolId)
                 ->orderBy('round')
                 ->orderBy('match_number')
                 ->get(),
         ]);
     }
+
 
 
 
