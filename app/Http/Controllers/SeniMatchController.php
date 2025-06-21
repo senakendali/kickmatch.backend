@@ -676,7 +676,7 @@ class SeniMatchController extends Controller
         $request->validate([
             'tournament_id' => 'required|exists:tournaments,id',
             'age_category_id' => 'required|exists:age_categories,id',
-            'match_category_id' => 'required|in:2,3,4',
+            'match_category_id' => 'required|in:2,3,4,5',
         ]);
     
         $matchCategoryId = $request->match_category_id;
@@ -698,7 +698,7 @@ class SeniMatchController extends Controller
         foreach (['male', 'female'] as $gender) {
             $filtered = $groupedByGender[$gender] ?? collect();
     
-            if ($matchCategoryId == 2) {
+            if ($matchCategoryId == 2 || $matchCategoryId == 5) {
                 // Tunggal
                 $result[$gender] = $filtered->count();
             } else {
