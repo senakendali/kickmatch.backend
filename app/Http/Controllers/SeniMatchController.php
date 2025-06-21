@@ -559,7 +559,7 @@ class SeniMatchController extends Controller
     {
         $validated = $request->validate([
             'tournament_id' => 'required|exists:tournaments,id',
-            'match_category_id' => 'required|in:2,3,4',
+            'match_category_id' => 'required|in:2,3,4,5',
             'age_category_id' => 'required|exists:age_categories,id',
             'gender' => 'required|in:male,female',
             'pool_size' => 'required|integer|min:1',
@@ -598,7 +598,7 @@ class SeniMatchController extends Controller
         $requiredMembers = $matchCategory === 3 ? 2 : ($matchCategory === 4 ? 3 : 1);
         $usedMemberIds = [];
 
-        if ($matchCategory === 2) {
+        if ($matchCategory === 2 || $matchCategory === 5) {
             // TUNGGAL
             $units = $participants->shuffle()->values();
         } else {
@@ -624,7 +624,7 @@ class SeniMatchController extends Controller
             ]);
 
             foreach ($chunk->values() as $index => $unit) {
-                if ($matchCategory === 2) {
+                if ($matchCategory === 2 || $matchCategory === 5) {
                     $teamMember = $unit->participant;
                     if (in_array($teamMember->id, $usedMemberIds)) continue;
 
