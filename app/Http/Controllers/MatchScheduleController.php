@@ -1936,8 +1936,10 @@ public function export(Request $request)
         );
         if ($isByeMatch) continue;
 
-        $arenaName = $detail->schedule->arena->name ?? 'Tanpa Arena';
+        $arena = $detail->schedule->arena->name ?? 'Tanpa Arena';
         $date = $detail->schedule->scheduled_date;
+        $groupKey = $arena . '||' . $date;
+
         $pool = $match->pool;
         $round = $match->round ?? 0;
 
@@ -1953,13 +1955,8 @@ public function export(Request $request)
         $participantTwoName = optional($match->participantTwo)->name;
 
         if (!$participantOneName && $match->parent_match_blue_id) {
-            $blueParentOrder = MatchScheduleDetail::where('tournament_match_id', $match->parent_match_blue_id)
-                ->value('order');
-
-            if (!$blueParentOrder && $match->parent_match_red_id) {
-                $blueParentOrder = MatchScheduleDetail::where('tournament_match_id', $match->parent_match_red_id)
-                    ->value('order');
-            }
+            $blueParentOrder = MatchScheduleDetail::where('tournament_match_id', $match->parent_match_blue_id)->value('order')
+                ?? MatchScheduleDetail::where('tournament_match_id', $match->parent_match_red_id)->value('order');
 
             $participantOneName = $blueParentOrder
                 ? 'Pemenang dari Partai #' . $blueParentOrder
@@ -1967,20 +1964,24 @@ public function export(Request $request)
         }
 
         if (!$participantTwoName && $match->parent_match_red_id) {
-            $redParentOrder = MatchScheduleDetail::where('tournament_match_id', $match->parent_match_red_id)
-                ->value('order');
-
-            if (!$redParentOrder && $match->parent_match_blue_id) {
-                $redParentOrder = MatchScheduleDetail::where('tournament_match_id', $match->parent_match_blue_id)
-                    ->value('order');
-            }
+            $redParentOrder = MatchScheduleDetail::where('tournament_match_id', $match->parent_match_red_id)->value('order')
+                ?? MatchScheduleDetail::where('tournament_match_id', $match->parent_match_blue_id)->value('order');
 
             $participantTwoName = $redParentOrder
                 ? 'Pemenang dari Partai #' . $redParentOrder
                 : 'Pemenang dari Pertandingan Sebelumnya';
         }
 
-        $matchData = [
+        if (!isset($result[$groupKey])) {
+            $result[$groupKey] = [
+                'arena_name' => $arena,
+                'scheduled_date' => $date,
+                'tournament_name' => $tournament->name ?? '-',
+                'matches' => [],
+            ];
+        }
+
+        $result[$groupKey]['matches'][] = [
             'pool_id' => $pool->id ?? null,
             'pool_name' => $pool->name ?? 'Tanpa Pool',
             'round' => $round,
@@ -1996,15 +1997,6 @@ public function export(Request $request)
             'age_category_name' => $ageCategoryName,
             'gender' => $gender,
         ];
-
-        $groupKey = $arenaName . '||' . $date . '||' . $ageCategory->id;
-
-        $result[$groupKey]['arena_name'] = $arenaName;
-        $result[$groupKey]['scheduled_date'] = $date;
-        $result[$groupKey]['tournament_name'] = $tournament->name ?? '-';
-        $result[$groupKey]['age_category_id'] = $ageCategory->id ?? 0;
-        $result[$groupKey]['age_category_name'] = $ageCategoryName;
-        $result[$groupKey]['matches'][] = $matchData;
     }
 
     $roundOrder = [
@@ -2019,8 +2011,7 @@ public function export(Request $request)
     $final = [];
 
     foreach ($result as $entry) {
-        $matches = collect($entry['matches']);
-
+        $matches = collect($entry['matches'])->sortBy('match_order')->values();
         $roundMap = $this->getMaxRoundByPool($matches);
 
         $matches = $matches->map(function ($match) use ($roundMap) {
@@ -2048,23 +2039,18 @@ public function export(Request $request)
             return $match;
         });
 
-        $matches = $matches->sortBy('match_order')->values();
-
         $final[] = [
             'arena_name' => $entry['arena_name'],
             'scheduled_date' => $entry['scheduled_date'],
             'tournament_name' => $entry['tournament_name'],
-            'age_category_id' => $entry['age_category_id'],
-            'age_category_name' => $entry['age_category_name'],
             'matches' => $matches,
         ];
     }
 
     $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('exports.tanding-schedule', ['data' => $final]);
     return $pdf->download("Jadwal_{$arenaName}_{$scheduledDate}.pdf");
-    //return $pdf->stream("Jadwal_{$arenaName}_{$scheduledDate}.pdf");
-
 }
+
 
 
     private function getMaxRoundByPool($matches)
