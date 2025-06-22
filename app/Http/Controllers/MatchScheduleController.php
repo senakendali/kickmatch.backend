@@ -1960,17 +1960,20 @@ public function export(Request $request)
         $gender = $categoryClass->gender === 'male' ? 'Putra' : ($categoryClass->gender === 'female' ? 'Putri' : '-');
         $className = ($ageCategory->name ?? '-') . ' ' . ($categoryClass->name ?? '-') . " ($gender)";
 
-        $round = $match->round ?? 0;
-
-        $groupedByArenaDate[$groupKey]['arena_name'] = $arena;
-        $groupedByArenaDate[$groupKey]['scheduled_date'] = $date;
-        $groupedByArenaDate[$groupKey]['tournament_name'] = $tournament->name ?? '-';
+        if (!isset($groupedByArenaDate[$groupKey])) {
+            $groupedByArenaDate[$groupKey] = [
+                'arena_name' => $arena,
+                'scheduled_date' => $date,
+                'tournament_name' => $tournament->name ?? '-',
+                'matches' => [],
+            ];
+        }
 
         $groupedByArenaDate[$groupKey]['matches'][] = [
             'pool_id' => $pool->id ?? null,
             'pool_name' => $pool->name ?? '-',
             'age_category_id' => $ageCategory->id ?? null,
-            'round' => $round,
+            'round' => $match->round ?? 0,
             'match_number' => $detail->order,
             'match_order' => $detail->order,
             'match_time' => $detail->start_time,
@@ -2038,6 +2041,7 @@ public function export(Request $request)
     $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('exports.tanding-schedule', ['data' => $final]);
     return $pdf->download("Jadwal_{$arenaName}_{$scheduledDate}.pdf");
 }
+
 
 
 
