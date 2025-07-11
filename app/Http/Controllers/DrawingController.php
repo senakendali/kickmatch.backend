@@ -1009,8 +1009,7 @@ class DrawingController extends Controller
         ]);
     }
 
-
-   public function getAllMatchRecap(Request $request)
+    public function getAllMatchRecap(Request $request)
     {
         $tournamentId = $request->query('tournament_id');
 
@@ -1057,10 +1056,6 @@ class DrawingController extends Controller
             'data' => $grouped
         ]);
     }
-
-
-
-
 
 
 
