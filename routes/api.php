@@ -263,6 +263,7 @@ Route::options('/{any}', function () {
     return response()->json([], 204);
 })->where('any', '.*');
 
+Route::middleware('auth:sanctum')->post('change-password', [UserController::class, 'changePassword']); 
 
 
 
