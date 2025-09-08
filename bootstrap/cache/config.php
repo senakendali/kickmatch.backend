@@ -505,7 +505,7 @@
   ),
   'mail' => 
   array (
-    'default' => 'log',
+    'default' => 'smtp',
     'mailers' => 
     array (
       'smtp' => 
@@ -513,10 +513,10 @@
         'transport' => 'smtp',
         'scheme' => NULL,
         'url' => NULL,
-        'host' => '127.0.0.1',
-        'port' => '2525',
-        'username' => NULL,
-        'password' => NULL,
+        'host' => 'mail.kickmatch.id',
+        'port' => '465',
+        'username' => 'no-reply@kickmatch.id',
+        'password' => '!a1@J0ut4/2Y',
         'timeout' => NULL,
         'local_domain' => 'localhost',
       ),
@@ -567,7 +567,7 @@
     ),
     'from' => 
     array (
-      'address' => 'hello@example.com',
+      'address' => 'no-reply@kickmatch.id',
       'name' => 'Laravel',
     ),
     'markdown' => 

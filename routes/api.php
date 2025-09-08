@@ -264,10 +264,9 @@ Route::options('/{any}', function () {
 })->where('any', '.*');
 
 Route::middleware('auth:sanctum')->post('change-password', [UserController::class, 'changePassword']); 
+Route::post('/forget-password', [UserController::class, 'forgetPassword']);
 
-
-
-
+Route::post('/reset-password', [UserController::class, 'resetPassword']);
 
 //Export
 
