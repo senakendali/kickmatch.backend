@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Illuminate\Support\Facades\Storage;
 
 class ContingentController extends Controller
 {
@@ -329,6 +330,71 @@ class ContingentController extends Controller
 
     public function update(Request $request, $id)
     {
+        // Set batas maksimal upload (misalnya 100MB)
+        ini_set('upload_max_filesize', '100M');
+        ini_set('post_max_size', '100M');
+
+        try {
+            $contingent = Contingent::findOrFail($id);
+
+            $validated = $request->validate([
+                'name' => 'sometimes|required|string|max:255',
+                'email' => 'sometimes|required|email|max:255|unique:contingents,email,' . $id,
+                'phone' => 'sometimes|required|string|max:255',
+                'password' => 'sometimes|required|string|min:8',
+                'pic_name' => 'sometimes|required|string|max:255',
+                'pic_email' => 'sometimes|required|email|max:255|unique:contingents,pic_email,' . $id,
+                'pic_phone' => 'sometimes|required|string|max:255',
+                'province_id' => 'sometimes|required|exists:provinces,id',
+                'district_id' => 'sometimes|required|exists:districts,id',
+                'subdistrict_id' => 'sometimes|required|exists:subdistricts,id',
+                'ward_id' => 'sometimes|required|exists:wards,id',
+                'address' => 'sometimes|required|string|max:255',
+                'status' => 'sometimes|required|in:active,inactive,pending,disqualified',
+                'coach' => 'sometimes|required|string|max:255',
+                'coach_asisten' => 'sometimes|required|string|max:255',
+                'fisioterapi' => 'sometimes|required|string|max:255',
+                'jersey_home' => 'sometimes|required|string|max:255',
+                'jersey_away' => 'sometimes|required|string|max:255',
+                'type' => 'sometimes|required|string|max:255',
+                'coach_kiper' => 'sometimes|required|string|max:255',
+                'kitman' => 'sometimes|required|string|max:255',
+                //'tournament_ids' => 'sometimes|array', // ✅ validasi relasi baru
+                //'tournament_ids.*' => 'exists:tournaments,id',
+                //'tournament_logo' => 'sometimes|nullable|image|mimes:jpeg,png,jpg',
+            ]);
+
+            if (!Storage::disk('public')->exists('uploads/contingent_logos')) {
+                Storage::disk('public')->makeDirectory('uploads/contingent_logos');
+            }
+
+            if ($request->hasFile('tournament_logo')) {
+                $imagePath = $request->file('tournament_logo')->store('uploads/contingent_logos', 'public');
+                $validated['logo'] = $imagePath;
+            }
+
+//echo '1<pre>'; print_r($data); die();
+            //$data = $request->except('tournament_ids');
+            //$contingent->update($data);
+            $contingent->update($validated);
+
+            return response()->json($contingent);
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['message' => 'Continent not found'], 404);
+        } catch (ValidationException $e) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to update Continent', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function _update(Request $request, $id)
+    {
+        // Set batas maksimal upload (misalnya 100MB)
+        ini_set('upload_max_filesize', '100M');
+        ini_set('post_max_size', '100M');
+        ini_set('memory_limit', '256M');
+        
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
             'email' => 'sometimes|required|email|max:255|unique:contingents,email,' . $id,
@@ -343,8 +409,9 @@ class ContingentController extends Controller
             'ward_id' => 'sometimes|required|exists:wards,id',
             'address' => 'sometimes|required|string|max:255',
             'status' => 'sometimes|required|in:active,inactive,pending,disqualified',
-            'tournament_ids' => 'sometimes|array', // ✅ validasi relasi baru
-            'tournament_ids.*' => 'exists:tournaments,id',
+            //'tournament_ids' => 'sometimes|array', // ✅ validasi relasi baru
+            //'tournament_ids.*' => 'exists:tournaments,id',
+            //'tournament_logo' => 'sometimes|nullable|image|mimes:jpeg,png,jpg',
         ]);
 
         if ($validator->fails()) {
@@ -352,9 +419,19 @@ class ContingentController extends Controller
         }
 
         try {
+
+            if (!Storage::disk('public')->exists('uploads/contingent_logos')) {
+                Storage::disk('public')->makeDirectory('uploads/contingent_logos');
+            }
+
+            if ($request->hasFile('tournament_logo')) {
+                $imagePath = $request->file('tournament_logo')->store('uploads/contingent_logos', 'public');
+                $data['logo'] = $imagePath;
+            }
+
             $contingent = Contingent::findOrFail($id);
             $data = $request->except('tournament_ids');
-
+//echo '1<pre>'; print_r($data); die();
             if (isset($data['password'])) {
                 $data['password'] = Hash::make($data['password']);
             }
