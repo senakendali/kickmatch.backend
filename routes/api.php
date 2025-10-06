@@ -34,6 +34,7 @@ use App\Http\Controllers\TournamentContactPersonController;
 use App\Http\Controllers\MatchScheduleController;
 use App\Http\Controllers\SyncController;
 use App\Http\Controllers\SeniMatchController;
+use App\Http\Controllers\Api\StaffRoleController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', [TeamMemberController::class, 'export']);
@@ -263,9 +264,12 @@ Route::options('/{any}', function () {
 })->where('any', '.*');
 
 Route::middleware('auth:sanctum')->post('change-password', [UserController::class, 'changePassword']); 
-Route::post('/forget-password', [UserController::class, 'forgetPassword']);
+Route::post('/forgot-password', [UserController::class, 'forgotPassword']);
 
 Route::post('/reset-password', [UserController::class, 'resetPassword']);
+
+// Staff Roles
+Route::get('/staff-roles', [StaffRoleController::class, 'index'])->name('staff-roles.index');
 
 //Export
 

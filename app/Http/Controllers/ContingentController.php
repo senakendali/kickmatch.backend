@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Contingent;
+use App\Models\TeamStaff;
 use App\Models\TournamentContingent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -10,6 +11,11 @@ use Illuminate\Support\Facades\Hash;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Str; 
 
 class ContingentController extends Controller
 {
@@ -83,41 +89,6 @@ class ContingentController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
-
-
-
-    public function index_(Request $request)
-    {
-        try {
-            $user = auth()->user();
-            $search = $request->input('search', ''); // Mendapatkan parameter search dari request
-
-            $query = Contingent::query();
-
-            // Jika ada query pencarian, filter berdasarkan nama atau field lain
-            if ($search) {
-                $query->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('pic_name', 'like', '%' . $search . '%')
-                    ->orWhere('pic_email', 'like', '%' . $search . '%')
-                    ->orWhere('pic_phone', 'like', '%' . $search . '%');
-                    
-            }
-
-            // Jika user bukan owner, filter berdasarkan pemilik kontingen
-            if ($user->group && $user->group->name !== 'Owner') {
-                $query->where('owner_id', $user->id);
-            }
-
-            $contingents = $query->withCount('teamMembers') // Menambahkan jumlah anggota tim
-                                ->paginate(10);
-
-            return response()->json($contingents);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
-    }
-
-    
 
     public function fetchAll(){
         try {
@@ -195,54 +166,46 @@ class ContingentController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
-}
+    }
 
 
     // Fetch a single contingent by ID
     public function show($id)
     {
         try {
-            $contingent = Contingent::with('tournaments')->findOrFail($id);
+            $contingent = Contingent::with([
+                'tournaments:id,name',
+                'staff:id,contingent_id,staff_role_id,full_name,phone,email,is_primary,ordering',
+            ])->findOrFail($id);
+
+            // Normalizer: pastikan selalu jadi URL absolut
+            $toUrl = function ($path) {
+                if (empty($path)) return null;
+
+                // Sudah absolut (http/https) atau data URL
+                if (Str::startsWith($path, ['http://','https://','data:'])) {
+                    return $path;
+                }
+
+                // Sudah /storage/... → jadikan absolut pakai URL::to()
+                if (Str::startsWith($path, ['/storage/', 'storage/'])) {
+                    $p = Str::startsWith($path, '/storage/') ? $path : '/'.$path;
+                    return URL::to($p);
+                }
+
+                // Path relatif di disk public → ambil /storage/... lalu absolutkan
+                return URL::to(Storage::disk('public')->url($path));
+            };
+
+            $contingent->logo              = $toUrl($contingent->logo);
+            $contingent->jersey_home_image = $toUrl($contingent->jersey_home_image);
+            $contingent->jersey_away_image = $toUrl($contingent->jersey_away_image);
+
             return response()->json(['data' => $contingent], 200);
-        } catch (\Exception $e) {
+        } catch (ModelNotFoundException $e) {
             return response()->json(['error' => 'Contingent not found.'], 404);
-        }
-    }
-
-
-    // Store a new contingent
-    public function store_(Request $request)
-    {
-        // Retrieve owner_id from the authenticated user
-        $ownerId = auth()->id();
-
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'pic_name' => 'required|string|max:255',
-            'pic_email' => 'required|email|max:255|unique:contingents,pic_email',
-            'pic_phone' => 'required|string|max:255',
-            'country_id' => 'required|exists:countries,id',
-            'province_id' => 'required|exists:provinces,id',
-            'district_id' => 'required|exists:districts,id',
-            'subdistrict_id' => 'required|exists:subdistricts,id',
-            'ward_id' => 'required|exists:wards,id',
-            'address' => 'required|string|max:255',
-            
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        try {
-            $data = $request->all();
-            $data['owner_id'] = $ownerId; // Assign the authenticated user ID
-            $data['status'] = 'active'; // Set the status to 'active'
-            $contingent = Contingent::create($data);
-
-            return response()->json(['data' => $contingent], 201);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'Failed to fetch contingent.','detail' => $e->getMessage()], 500);
         }
     }
 
@@ -251,203 +214,358 @@ class ContingentController extends Controller
         $ownerId = auth()->id();
 
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'pic_name' => 'required|string|max:255',
-            'pic_email' => 'required|email|max:255|unique:contingents,pic_email',
-            'pic_phone' => 'required|string|max:255',
-            'country_id' => 'required|exists:countries,id',
-            'province_id' => 'required|exists:provinces,id',
-            'district_id' => 'required|exists:districts,id',
-            'subdistrict_id' => 'required|exists:subdistricts,id',
-            'ward_id' => 'required|exists:wards,id',
-            'address' => 'required|string|max:255',
-            'tournament_id' => 'required|exists:tournaments,id', // ✅ validasi tournament
+            'name'           => ['required','string','max:255'],
+            'type'           => ['required', Rule::in(['futsal','minisoccer'])],
+            'pic_name'       => ['required','string','max:255'],
+            'pic_email'      => ['required','email','max:255','unique:contingents,pic_email'],
+            'pic_phone'      => ['required','string','max:255'],
+            'country_id'     => ['required','exists:countries,id'],
+            'province_id'    => ['required','exists:provinces,id'],
+            'district_id'    => ['required','exists:districts,id'],
+            'subdistrict_id' => ['required','exists:subdistricts,id'],
+            'ward_id'        => ['required','exists:wards,id'],
+            'address'        => ['required','string','max:255'],
+            'tournament_id'  => ['required','exists:tournaments,id'],
+
+            'logo'               => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
+            'jersey_home_hex'    => ['nullable','regex:/^#[0-9A-Fa-f]{6}$/'],
+            'jersey_away_hex'    => ['nullable','regex:/^#[0-9A-Fa-f]{6}$/'],
+            'jersey_home_image'  => ['nullable','image','mimes:jpg,jpeg,png,webp','max:4096'],
+            'jersey_away_image'  => ['nullable','image','mimes:jpg,jpeg,png,webp','max:4096'],
+
+            'staff'                    => ['nullable','array'],
+            'staff.*.staff_role_id'    => ['nullable','exists:staff_roles,id'],
+            'staff.*.full_name'        => ['nullable','string','max:255'],
+            'staff.*.email'            => ['nullable','email','max:255'],
+            'staff.*.phone'            => ['nullable','string','max:50'],
+            'staff.*.is_primary'       => ['nullable','boolean'],
+            'staff.*.ordering'         => ['nullable','integer','min:0'],
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        try {
-            $data = $request->all();
-            $data['owner_id'] = $ownerId;
-            $data['status'] = 'active';
+        // Pastikan direktori upload ada
+        foreach (['uploads/contingent_logos','uploads/contingent_jerseys'] as $dir) {
+            if (!Storage::disk('public')->exists($dir)) {
+                Storage::disk('public')->makeDirectory($dir);
+            }
+        }
 
-            // 🔸 Buat kontingen
+        DB::beginTransaction();
+        try {
+            $jerseyHomeHex = $request->input('jersey_home_hex');
+            $jerseyAwayHex = $request->input('jersey_away_hex');
+            if ($jerseyHomeHex) $jerseyHomeHex = strtoupper($jerseyHomeHex);
+            if ($jerseyAwayHex) $jerseyAwayHex = strtoupper($jerseyAwayHex);
+
+            $data = [
+                'owner_id'        => $ownerId,
+                'status'          => 'active',
+                'name'            => $request->string('name'),
+                'type'            => $request->input('type', 'futsal'),
+                'pic_name'        => $request->string('pic_name'),
+                'pic_email'       => $request->string('pic_email'),
+                'pic_phone'       => $request->string('pic_phone'),
+                'country_id'      => (int) $request->input('country_id'),
+                'province_id'     => (int) $request->input('province_id'),
+                'district_id'     => (int) $request->input('district_id'),
+                'subdistrict_id'  => (int) $request->input('subdistrict_id'),
+                'ward_id'         => (int) $request->input('ward_id'),
+                'address'         => $request->string('address'),
+                'jersey_home_hex' => $jerseyHomeHex,
+                'jersey_away_hex' => $jerseyAwayHex,
+            ];
+
+            // Uploads → simpan PATH relatif
+            $slug = \Illuminate\Support\Str::slug($data['name'] ?? 'team');
+
+            if ($request->hasFile('logo')) {
+                $filename = 'logo-'.$slug.'-'.time().'.'.$request->file('logo')->extension();
+                $data['logo'] = $request->file('logo')->storeAs('uploads/contingent_logos', $filename, 'public');
+            }
+            if ($request->hasFile('jersey_home_image')) {
+                $filename = 'jersey-home-'.$slug.'-'.time().'.'.$request->file('jersey_home_image')->extension();
+                $data['jersey_home_image'] = $request->file('jersey_home_image')->storeAs('uploads/contingent_jerseys', $filename, 'public');
+            }
+            if ($request->hasFile('jersey_away_image')) {
+                $filename = 'jersey-away-'.$slug.'-'.time().'.'.$request->file('jersey_away_image')->extension();
+                $data['jersey_away_image'] = $request->file('jersey_away_image')->storeAs('uploads/contingent_jerseys', $filename, 'public');
+            }
+
+            // Create contingent
             $contingent = Contingent::create($data);
 
-            // 🔸 Join ke turnamen via pivot table
-            \App\Models\TournamentContingent::create([
-                'tournament_id' => $request->tournament_id,
+            // Pivot tournament
+            TournamentContingent::firstOrCreate([
+                'tournament_id' => (int) $request->tournament_id,
                 'contingent_id' => $contingent->id,
             ]);
 
+            // ==== STAFF ====
+            $staffPayload = $request->input('staff', []);
+
+            // Kalau FE kirim sebagai JSON string, parse
+            if (is_string($staffPayload)) {
+                $decoded = json_decode($staffPayload, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $staffPayload = $decoded;
+                } else {
+                    $staffPayload = [];
+                }
+            }
+            if (!is_array($staffPayload)) {
+                $staffPayload = [];
+            }
+
+            // Log buat debugging (lihat storage/logs/laravel.log)
+            Log::info('STORE staff raw payload', ['staff' => $staffPayload]);
+
+            // Insert per baris (lebih mudah trace error)
+            foreach ($staffPayload as $row) {
+                $roleId    = $row['staff_role_id'] ?? null;
+                $fullName  = $row['full_name']     ?? null;
+
+                if (empty($roleId) || empty($fullName)) {
+                    continue; // skip baris kosong
+                }
+
+                $contingent->staff()->create([
+                    'staff_role_id' => (int) $roleId,
+                    'full_name'     => $fullName,
+                    'phone'         => $row['phone'] ?? null,
+                    'email'         => $row['email'] ?? null,
+                    'is_primary'    => !empty($row['is_primary']) ? 1 : 0,
+                    'ordering'      => isset($row['ordering']) ? (int)$row['ordering'] : 0,
+                ]);
+            }
+
+            DB::commit();
+
+            // Response: convert path → URL
+            $contingent->load(['staff', 'tournaments']);
+            foreach (['logo','jersey_home_image','jersey_away_image'] as $f) {
+                $p = $contingent->{$f};
+                $contingent->{$f} = $p ? Storage::disk('public')->url($p) : null;
+            }
+
             return response()->json(['data' => $contingent], 201);
-        } catch (\Exception $e) {
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('STORE contingent failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
 
 
 
     // Update an existing contingent
-    public function update_(Request $request, $id)
-    {
-        $validator = Validator::make($request->all(), [
-            'name' => 'sometimes|required|string|max:255',
-            'email' => 'sometimes|required|email|max:255|unique:contingents,email,' . $id,
-            'phone' => 'sometimes|required|string|max:255',
-            'password' => 'sometimes|required|string|min:8',
-            'pic_name' => 'sometimes|required|string|max:255',
-            'pic_email' => 'sometimes|required|email|max:255|unique:contingents,pic_email,' . $id,
-            'pic_phone' => 'sometimes|required|string|max:255',
-            'province_id' => 'sometimes|required|exists:provinces,id',
-            'district_id' => 'sometimes|required|exists:districts,id',
-            'subdistrict_id' => 'sometimes|required|exists:subdistricts,id',
-            'ward_id' => 'sometimes|required|exists:wards,id',
-            'address' => 'sometimes|required|string|max:255',
-            'status' => 'sometimes|required|in:active,inactive,pending,disqualified',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        try {
-            $contingent = Contingent::findOrFail($id);
-            $data = $request->all();
-
-            if (isset($data['password'])) {
-                $data['password'] = Hash::make($data['password']);
-            }
-
-            $contingent->update($data);
-            return response()->json(['data' => $contingent], 200);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
-    }
+    
 
     public function update(Request $request, $id)
     {
-        // Set batas maksimal upload (misalnya 100MB)
+        // batas upload (opsional)
         ini_set('upload_max_filesize', '100M');
         ini_set('post_max_size', '100M');
 
         try {
             $contingent = Contingent::findOrFail($id);
 
+            // VALIDASI (field yang dipakai FE)
             $validated = $request->validate([
-                'name' => 'sometimes|required|string|max:255',
-                'email' => 'sometimes|required|email|max:255|unique:contingents,email,' . $id,
-                'phone' => 'sometimes|required|string|max:255',
-                'password' => 'sometimes|required|string|min:8',
-                'pic_name' => 'sometimes|required|string|max:255',
-                'pic_email' => 'sometimes|required|email|max:255|unique:contingents,pic_email,' . $id,
-                'pic_phone' => 'sometimes|required|string|max:255',
-                'province_id' => 'sometimes|required|exists:provinces,id',
-                'district_id' => 'sometimes|required|exists:districts,id',
-                'subdistrict_id' => 'sometimes|required|exists:subdistricts,id',
-                'ward_id' => 'sometimes|required|exists:wards,id',
-                'address' => 'sometimes|required|string|max:255',
-                'status' => 'sometimes|required|in:active,inactive,pending,disqualified',
-                'coach' => 'sometimes|required|string|max:255',
-                'coach_asisten' => 'sometimes|required|string|max:255',
-                'fisioterapi' => 'sometimes|required|string|max:255',
-                'jersey_home' => 'sometimes|required|string|max:255',
-                'jersey_away' => 'sometimes|required|string|max:255',
-                'type' => 'sometimes|required|string|max:255',
-                'coach_kiper' => 'sometimes|required|string|max:255',
-                'kitman' => 'sometimes|required|string|max:255',
-                //'tournament_ids' => 'sometimes|array', // ✅ validasi relasi baru
-                //'tournament_ids.*' => 'exists:tournaments,id',
-                //'tournament_logo' => 'sometimes|nullable|image|mimes:jpeg,png,jpg',
+                'name'           => 'sometimes|required|string|max:255',
+                'type'           => ['sometimes','required', Rule::in(['futsal','minisoccer'])],
+
+                'pic_name'       => 'sometimes|required|string|max:255',
+                'pic_email'      => 'sometimes|required|email|max:255|unique:contingents,pic_email,' . $id,
+                'pic_phone'      => 'sometimes|required|string|max:255',
+
+                'country_id'     => 'sometimes|nullable|exists:countries,id',
+                'province_id'    => 'sometimes|nullable|exists:provinces,id',
+                'district_id'    => 'sometimes|nullable|exists:districts,id',
+                'subdistrict_id' => 'sometimes|nullable|exists:subdistricts,id',
+                'ward_id'        => 'sometimes|nullable|exists:wards,id',
+                'address'        => 'sometimes|nullable|string|max:255',
+
+                'status'         => 'sometimes|in:active,inactive,pending,disqualified',
+
+                // jersey & warna
+                'jersey_home_hex'   => 'sometimes|nullable|regex:/^#[0-9A-Fa-f]{6}$/',
+                'jersey_away_hex'   => 'sometimes|nullable|regex:/^#[0-9A-Fa-f]{6}$/',
+                'jersey_home_image' => 'sometimes|nullable|image|mimes:jpg,jpeg,png,webp|max:20480',
+                'jersey_away_image' => 'sometimes|nullable|image|mimes:jpg,jpeg,png,webp|max:20480',
+
+                // logo
+                'logo'              => 'sometimes|nullable|image|mimes:jpg,jpeg,png,webp|max:20480',
+
+                // multi tournament
+                'tournament_ids'    => 'sometimes|array',
+                'tournament_ids.*'  => 'exists:tournaments,id',
+
+                // staf (baris kosong/invalid akan difilter manual)
+                'staff'                         => 'sometimes|array',
+                'staff.*.id'                    => 'nullable|integer',
+                'staff.*.staff_role_id'         => 'nullable|exists:staff_roles,id',
+                'staff.*.full_name'             => 'nullable|string|max:255',
+                'staff.*.phone'                 => 'nullable|string|max:255',
+                'staff.*.email'                 => 'nullable|email|max:255',
+                'staff.*.is_primary'            => 'nullable|boolean',
+                'staff.*.ordering'              => 'nullable|integer|min:0',
             ]);
 
-            if (!Storage::disk('public')->exists('uploads/contingent_logos')) {
-                Storage::disk('public')->makeDirectory('uploads/contingent_logos');
+            DB::beginTransaction();
+
+            // Pastikan folder publik ada
+            foreach (['uploads/contingent_logos','uploads/contingent_jerseys'] as $dir) {
+                if (!Storage::disk('public')->exists($dir)) {
+                    Storage::disk('public')->makeDirectory($dir);
+                }
             }
 
-            if ($request->hasFile('tournament_logo')) {
-                $imagePath = $request->file('tournament_logo')->store('uploads/contingent_logos', 'public');
-                $validated['logo'] = $imagePath;
+            $updates = $validated;
+            $slug = Str::slug($request->input('name', $contingent->name) ?: 'team');
+
+            // === FILES ===
+            // Logo
+            if ($request->hasFile('logo')) {
+                if ($contingent->logo && !Str::startsWith($contingent->logo, ['http://','https://','/storage/'])) {
+                    Storage::disk('public')->delete($contingent->logo);
+                }
+                $filename = 'logo-'.$slug.'-'.time().'.'.$request->file('logo')->extension();
+                $updates['logo'] = $request->file('logo')->storeAs('uploads/contingent_logos', $filename, 'public');
             }
 
-//echo '1<pre>'; print_r($data); die();
-            //$data = $request->except('tournament_ids');
-            //$contingent->update($data);
-            $contingent->update($validated);
+            // Jersey home
+            if ($request->hasFile('jersey_home_image')) {
+                if ($contingent->jersey_home_image && !Str::startsWith($contingent->jersey_home_image, ['http://','https://','/storage/'])) {
+                    Storage::disk('public')->delete($contingent->jersey_home_image);
+                }
+                $filename = 'jersey-home-'.$slug.'-'.time().'.'.$request->file('jersey_home_image')->extension();
+                $updates['jersey_home_image'] = $request->file('jersey_home_image')->storeAs('uploads/contingent_jerseys', $filename, 'public');
+            }
 
-            return response()->json($contingent);
+            // Jersey away
+            if ($request->hasFile('jersey_away_image')) {
+                if ($contingent->jersey_away_image && !Str::startsWith($contingent->jersey_away_image, ['http://','https://','/storage/'])) {
+                    Storage::disk('public')->delete($contingent->jersey_away_image);
+                }
+                $filename = 'jersey-away-'.$slug.'-'.time().'.'.$request->file('jersey_away_image')->extension();
+                $updates['jersey_away_image'] = $request->file('jersey_away_image')->storeAs('uploads/contingent_jerseys', $filename, 'public');
+            }
+
+            // Buang key non-kolom sebelum update
+            unset($updates['tournament_ids'], $updates['staff']);
+
+            // === UPDATE MASTER ===
+            $contingent->fill($updates);
+            $contingent->save();
+
+            // === SYNC TOURNAMENTS ===
+            if ($request->filled('tournament_ids')) {
+                $contingent->tournaments()->sync($request->input('tournament_ids', []));
+            }
+
+            // === STAFF ===
+            if ($request->has('staff')) {
+                $payload = collect($request->input('staff', []))
+                    ->filter(fn($r) => !empty($r['staff_role_id']) && !empty($r['full_name']))
+                    ->values();
+
+                $hasId = $payload->contains(fn($r) => !empty($r['id']));
+
+                if ($hasId) {
+                    // UPSERT by id + delete yang tidak dikirim
+                    $sentIds = [];
+                    foreach ($payload as $row) {
+                        $data = [
+                            'contingent_id' => $contingent->id,
+                            'staff_role_id' => (int) $row['staff_role_id'],
+                            'full_name'     => $row['full_name'],
+                            'phone'         => $row['phone'] ?? null,
+                            'email'         => $row['email'] ?? null,
+                            'is_primary'    => !empty($row['is_primary']) ? 1 : 0,
+                            'ordering'      => isset($row['ordering']) ? (int) $row['ordering'] : 0,
+                        ];
+
+                        if (!empty($row['id'])) {
+                            $staff = TeamStaff::where('contingent_id', $contingent->id)
+                                ->where('id', (int) $row['id'])
+                                ->first();
+
+                            if ($staff) {
+                                $staff->update($data);
+                                $sentIds[] = $staff->id;
+                            } else {
+                                $new = TeamStaff::create($data);
+                                $sentIds[] = $new->id;
+                            }
+                        } else {
+                            $new = TeamStaff::create($data);
+                            $sentIds[] = $new->id;
+                        }
+                    }
+
+                    if (!empty($sentIds)) {
+                        TeamStaff::where('contingent_id', $contingent->id)
+                            ->whereNotIn('id', $sentIds)
+                            ->delete();
+                    }
+                } else {
+                    // REPLACE-ALL jika FE tidak kirim id
+                    TeamStaff::where('contingent_id', $contingent->id)->delete();
+
+                    $rows = $payload->map(function ($r) use ($contingent) {
+                        return [
+                            'contingent_id' => $contingent->id,
+                            'staff_role_id' => (int) $r['staff_role_id'],
+                            'full_name'     => $r['full_name'],
+                            'phone'         => $r['phone'] ?? null,
+                            'email'         => $r['email'] ?? null,
+                            'is_primary'    => !empty($r['is_primary']) ? 1 : 0,
+                            'ordering'      => isset($r['ordering']) ? (int) $r['ordering'] : 0,
+                            'created_at'    => now(),
+                            'updated_at'    => now(),
+                        ];
+                    })->all();
+
+                    if (!empty($rows)) {
+                        TeamStaff::insert($rows);
+                    }
+                }
+            }
+
+            DB::commit();
+
+            // Return with URLs (bukan path relatif)
+            $contingent->load([
+                'tournaments:id,name',
+                'staff:id,contingent_id,staff_role_id,full_name,phone,email,is_primary,ordering',
+            ]);
+
+            foreach (['logo','jersey_home_image','jersey_away_image'] as $f) {
+                $p = $contingent->{$f};
+                $contingent->{$f} = $p
+                    ? (Str::startsWith($p, ['http://','https://','/storage/']) ? $p : Storage::disk('public')->url($p))
+                    : null;
+            }
+
+            return response()->json(['data' => $contingent], 200);
+
         } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'Continent not found'], 404);
+            return response()->json(['message' => 'Contingent not found'], 404);
         } catch (ValidationException $e) {
             return response()->json(['message' => 'Validation failed', 'errors' => $e->errors()], 422);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to update Continent', 'error' => $e->getMessage()], 500);
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to update Contingent', 'error' => $e->getMessage()], 500);
         }
     }
 
-    public function _update(Request $request, $id)
-    {
-        // Set batas maksimal upload (misalnya 100MB)
-        ini_set('upload_max_filesize', '100M');
-        ini_set('post_max_size', '100M');
-        ini_set('memory_limit', '256M');
-        
-        $validator = Validator::make($request->all(), [
-            'name' => 'sometimes|required|string|max:255',
-            'email' => 'sometimes|required|email|max:255|unique:contingents,email,' . $id,
-            'phone' => 'sometimes|required|string|max:255',
-            'password' => 'sometimes|required|string|min:8',
-            'pic_name' => 'sometimes|required|string|max:255',
-            'pic_email' => 'sometimes|required|email|max:255|unique:contingents,pic_email,' . $id,
-            'pic_phone' => 'sometimes|required|string|max:255',
-            'province_id' => 'sometimes|required|exists:provinces,id',
-            'district_id' => 'sometimes|required|exists:districts,id',
-            'subdistrict_id' => 'sometimes|required|exists:subdistricts,id',
-            'ward_id' => 'sometimes|required|exists:wards,id',
-            'address' => 'sometimes|required|string|max:255',
-            'status' => 'sometimes|required|in:active,inactive,pending,disqualified',
-            //'tournament_ids' => 'sometimes|array', // ✅ validasi relasi baru
-            //'tournament_ids.*' => 'exists:tournaments,id',
-            //'tournament_logo' => 'sometimes|nullable|image|mimes:jpeg,png,jpg',
-        ]);
 
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        try {
-
-            if (!Storage::disk('public')->exists('uploads/contingent_logos')) {
-                Storage::disk('public')->makeDirectory('uploads/contingent_logos');
-            }
-
-            if ($request->hasFile('tournament_logo')) {
-                $imagePath = $request->file('tournament_logo')->store('uploads/contingent_logos', 'public');
-                $data['logo'] = $imagePath;
-            }
-
-            $contingent = Contingent::findOrFail($id);
-            $data = $request->except('tournament_ids');
-//echo '1<pre>'; print_r($data); die();
-            if (isset($data['password'])) {
-                $data['password'] = Hash::make($data['password']);
-            }
-
-            $contingent->update($data);
-
-            // ✅ Sync tournament_ids jika ada
-            if ($request->has('tournament_ids')) {
-                $contingent->tournaments()->sync($request->tournament_ids);
-            }
-
-            return response()->json(['data' => $contingent->load('tournaments')], 200);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
-    }
+    
 
     // Delete a contingent
     public function destroy($id)

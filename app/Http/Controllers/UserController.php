@@ -64,7 +64,7 @@ class UserController extends Controller
         }
     }
 
-    public function forgetPassword(Request $request){
+    public function forgotPassword(Request $request){
         $input = $request->all();
         $email = $input['email'];
         //echo 'email: '.$email; die();

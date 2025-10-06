@@ -67,6 +67,12 @@ class Contingent extends Model
         return $this->belongsToMany(Tournament::class, 'tournament_contingents')->withTimestamps();
     }
 
+    public function staff()
+    {
+        return $this->hasMany(TeamStaff::class)->ordered();
+    }
+
+
 
     
 }
