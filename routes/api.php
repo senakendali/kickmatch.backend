@@ -35,6 +35,7 @@ use App\Http\Controllers\MatchScheduleController;
 use App\Http\Controllers\SyncController;
 use App\Http\Controllers\SeniMatchController;
 use App\Http\Controllers\Api\StaffRoleController;
+use App\Http\Controllers\Api\BlogPostController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', [TeamMemberController::class, 'export']);
@@ -229,12 +230,8 @@ Route::get('/matches/reorder-again/{tournament_id}', [MatchScheduleController::c
 Route::get('/tanding/export-schedule', [MatchScheduleController::class, 'export']);
 Route::get('/seni/export-schedule', [SeniMatchController::class, 'export']);
 
-
-
-
-
-
-
+Route::get('/blog-post/{slug}', [BlogPostController::class, 'show']);
+Route::get('/blog-posts', [BlogPostController::class, 'index']);
 
 //Auth
 Route::post('/register', [AuthController::class, 'register']);
@@ -253,8 +250,6 @@ Route::post('/update-next-match-slot', [SyncController::class, 'updateNextMatchS
 Route::get('/fetch-match-categories', [MatchCategoryController::class, 'getByTournament']);
 Route::get('/fetch-age-categories', [AgeCategoryController::class, 'getByTournament']);
 Route::get('/fetch-category-classes', [CategoryClassController::class, 'getByTournament']);
-
-
 
 Route::post('/login', [AuthController::class, 'login']);
 
