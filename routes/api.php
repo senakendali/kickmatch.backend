@@ -36,6 +36,7 @@ use App\Http\Controllers\SyncController;
 use App\Http\Controllers\SeniMatchController;
 use App\Http\Controllers\Api\StaffRoleController;
 use App\Http\Controllers\Api\BlogPostController;
+use App\Http\Controllers\BlogSettingController;
 use App\Models\TeamMember;
 
 Route::get('/team-members/export', [TeamMemberController::class, 'export']);
@@ -268,5 +269,9 @@ Route::get('/staff-roles', [StaffRoleController::class, 'index'])->name('staff-r
 
 //Export
 
-
-
+// Blog Settings
+Route::get('/blog-settings', [BlogSettingController::class, 'index']);
+Route::post('/blog-settings', [BlogSettingController::class, 'store']);
+Route::get('/blog-settings/{blog_setting}', [BlogSettingController::class, 'show']);
+Route::post('/blog-settings/update/{blog_setting}', [BlogSettingController::class, 'update']);
+//Route::delete('/blog-settings/{blog_setting}', [BlogSettingController::class, 'destroy']);
