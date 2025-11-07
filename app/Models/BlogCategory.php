@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class BlogCategory extends Model
 {
+    protected $table = 'blog_categories';
+
     protected $fillable = [
         'name', 'slug', 'description', 'parent_id', 'is_active', 'ordering',
     ];
