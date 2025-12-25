@@ -23,7 +23,11 @@ class DatabaseSeeder extends Seeder
             GameTypesSeeder::class,
             TournamentFormatsSeeder::class,
             AgeCategoriesSeeder::class,
+            GroupRoleSeeder::class,
+            StaffRoles::class,
             UserSeeder::class,
+            PermissionSeeder::class,
+
         ]);
     }
 }

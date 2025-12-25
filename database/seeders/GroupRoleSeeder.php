@@ -14,13 +14,13 @@ class GroupRoleSeeder extends Seeder
     {
         // Create or update roles
         $ownerRole = Role::updateOrCreate(['name' => 'owner']);
-        $adminRole = Role::updateOrCreate(['name' => 'admin']);
-        $userRole = Role::updateOrCreate(['name' => 'user']);
+        $adminRole = Role::updateOrCreate(['name' => 'eo']);
+        $userRole = Role::updateOrCreate(['name' => 'manager']);
     
         // Create or update groups
         $ownerGroup = UserGroup::updateOrCreate(['name' => 'Owner']);
-        $picGroup = UserGroup::updateOrCreate(['name' => 'Event PIC']);
-        $userGroup = UserGroup::updateOrCreate(['name' => 'User']);
+        $picGroup = UserGroup::updateOrCreate(['name' => 'Event Organizer']);
+        $userGroup = UserGroup::updateOrCreate(['name' => 'Team Manager']);
     
         // Assign roles to groups
         $ownerGroup->roles()->attach($ownerRole);

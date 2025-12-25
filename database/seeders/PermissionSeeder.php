@@ -39,14 +39,14 @@ class PermissionSeeder extends Seeder
                 'view classes', 'create classes', 'edit classes', 'delete classes',
                 'view match-clasification', 'create match-clasification', 'edit match-clasification', 'delete match-clasification',
             ],
-            'admin' => [
+            'eo' => [
                 'view dashboard', 'register', 'download', 'view insight', 'export contingent', 'view contingent', 'create contingent', 'edit contingent', 'delete contingent',
                 'view member', 'export member', 'create member', 'edit member', 'delete member',
                 'view payment', 'confirm payment', 'create payment', 'edit payment', 'delete payment', 'upload payment struk', 
                 'view classes', 'create classes', 'edit classes', 'delete classes',
                 'view match-clasification', 'create match-clasification', 'edit match-clasification', 'delete match-clasification',
             ],
-            'user' => [
+            'manager' => [
                 'view dashboard', 'register', 'download', 
                 'view contingent', 'create contingent', 'edit contingent', 
                 'view member', 'create member', 'edit member', 
