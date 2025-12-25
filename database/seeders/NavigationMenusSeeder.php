@@ -10,12 +10,17 @@ class NavigationMenusSeeder extends Seeder
 {
     public function run(): void
     {
-        // OPTIONAL: kalau mau bersihin dulu (hati-hati kalau ada FK)
-        // DB::table('navigation_menus')->truncate();
+        // Matikan FK dulu biar truncate gak error
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        DB::table('navigation_menus')->truncate();
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
         $now = Carbon::now();
 
-        DB::table('navigation_menus')->insert([
+        /**
+         * STEP 1: PARENT MENU (parent_id = null)
+         */
+        $parents = [
             [
                 'id'         => 1,
                 'name'       => 'Dashboard',
@@ -83,6 +88,36 @@ class NavigationMenusSeeder extends Seeder
                 'updated_at' => $now,
             ],
             [
+                'id'         => 12,
+                'name'       => 'System Settings',
+                'role_name'  => 'owner',
+                'url'        => '#',
+                'parent_id'  => null,
+                'order'      => 6,
+                'type'       => 'admin',
+                'created_at' => Carbon::parse('2025-03-28 13:43:53'),
+                'updated_at' => Carbon::parse('2025-03-28 13:43:53'),
+            ],
+            [
+                'id'         => 14,
+                'name'       => 'Tournament Settings',
+                'role_name'  => 'owner, eo',
+                'url'        => '#',
+                'parent_id'  => null,
+                'order'      => 8,
+                'type'       => 'admin',
+                'created_at' => Carbon::parse('2025-04-07 13:24:17'),
+                'updated_at' => Carbon::parse('2025-04-07 13:24:17'),
+            ],
+        ];
+
+        DB::table('navigation_menus')->insert($parents);
+
+        /**
+         * STEP 2: CHILD MENU (punya parent_id)
+         */
+        $children = [
+            [
                 'id'         => 8,
                 'name'       => 'Classes',
                 'role_name'  => 'owner, admin',
@@ -116,17 +151,6 @@ class NavigationMenusSeeder extends Seeder
                 'updated_at' => $now,
             ],
             [
-                'id'         => 12,
-                'name'       => 'System Settings',
-                'role_name'  => 'owner',
-                'url'        => '#',
-                'parent_id'  => null,
-                'order'      => 6,
-                'type'       => 'admin',
-                'created_at' => Carbon::parse('2025-03-28 13:43:53'),
-                'updated_at' => Carbon::parse('2025-03-28 13:43:53'),
-            ],
-            [
                 'id'         => 13,
                 'name'       => 'Navigation',
                 'role_name'  => 'owner, admin',
@@ -136,17 +160,6 @@ class NavigationMenusSeeder extends Seeder
                 'type'       => 'admin',
                 'created_at' => Carbon::parse('2025-03-28 13:45:39'),
                 'updated_at' => Carbon::parse('2025-03-28 13:45:39'),
-            ],
-            [
-                'id'         => 14,
-                'name'       => 'Tournament Settings',
-                'role_name'  => 'owner, eo',
-                'url'        => '#',
-                'parent_id'  => null,
-                'order'      => 8,
-                'type'       => 'admin',
-                'created_at' => Carbon::parse('2025-04-07 13:24:17'),
-                'updated_at' => Carbon::parse('2025-04-07 13:24:17'),
             ],
             [
                 'id'         => 15,
@@ -236,6 +249,8 @@ class NavigationMenusSeeder extends Seeder
                 'created_at' => Carbon::parse('2025-12-02 02:23:46'),
                 'updated_at' => Carbon::parse('2025-12-02 02:24:20'),
             ],
-        ]);
+        ];
+
+        DB::table('navigation_menus')->insert($children);
     }
 }
