@@ -10,7 +10,7 @@ class AgeCategoriesSeeder extends Seeder
     public function run(): void
     {
         // ✅ HAPUS semua data dulu (biar bersih)
-        DB::table('age_categories')->truncate();
+       // DB::table('age_categories')->truncate();
 
         // ✅ Seed default Kickmatch
         $rows = [
