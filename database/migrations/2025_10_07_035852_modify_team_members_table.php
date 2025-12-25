@@ -11,12 +11,52 @@ return new class extends Migration
      */
     public function up(): void
     {
+        /**
+         * 1) DROP FOREIGN KEY DULU
+         * Biar nanti waktu dropColumn nggak bentrok sama constraint.
+         */
+        Schema::table('team_members', function (Blueprint $table) {
+            // FK ke championship_category_id
+            if (Schema::hasColumn('team_members', 'championship_category_id')) {
+                try {
+                    $table->dropForeign('team_members_championship_category_id_foreign');
+                } catch (\Throwable $e) {
+                    // kalau di env tertentu FK-nya sudah ke-drop, aman di-skip
+                }
+            }
+
+            // FK ke match_category_id (kalau ada)
+            if (Schema::hasColumn('team_members', 'match_category_id')) {
+                try {
+                    $table->dropForeign('team_members_match_category_id_foreign');
+                } catch (\Throwable $e) {}
+            }
+
+            // FK ke age_category_id (kalau ada)
+            if (Schema::hasColumn('team_members', 'age_category_id')) {
+                try {
+                    $table->dropForeign('team_members_age_category_id_foreign');
+                } catch (\Throwable $e) {}
+            }
+
+            // FK ke category_class_id (kalau ada)
+            if (Schema::hasColumn('team_members', 'category_class_id')) {
+                try {
+                    $table->dropForeign('team_members_category_class_id_foreign');
+                } catch (\Throwable $e) {}
+            }
+        });
+
+        /**
+         * 2) BARU LANJUT KE DROP COLUMN & TAMBAH KOLUMN FUTSAL
+         */
         Schema::table('team_members', function (Blueprint $table) {
             /* ====== HAPUS KOLOM WARISAN / TIDAK DIPAKAI ====== */
             // Dokumen link lama (diganti upload file path)
             if (Schema::hasColumn('team_members', 'documents')) {
                 $table->dropColumn('documents');
             }
+
             // Kolom kategori silat (tidak dipakai di player form)
             foreach ([
                 'championship_category_id',
@@ -121,5 +161,11 @@ return new class extends Migration
                 $table->string('nik', 255)->nullable(false)->change();
             }
         });
+
+        // (optional) kalau mau bener-bener balikin FKs bisa ditambah di sini
+        // Schema::table('team_members', function (Blueprint $table) {
+        //     $table->foreign('championship_category_id')->references('id')->on('championship_categories');
+        //     ...
+        // });
     }
 };
