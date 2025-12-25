@@ -14,6 +14,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Support\Str; 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use App\Models\EventOrganizer;
 
 
 
@@ -22,24 +23,18 @@ class TeamMemberController extends Controller
     public function index(Request $request)
     {
         try {
-            $fetchAll = filter_var($request->query('fetch_all', false), FILTER_VALIDATE_BOOLEAN);
-            $is_payment_confirmation = filter_var($request->query('is_payment_confirmation', false), FILTER_VALIDATE_BOOLEAN);
+            $fetchAll     = filter_var($request->query('fetch_all', false), FILTER_VALIDATE_BOOLEAN);
             $tournamentId = $request->query('tournament_id');
-
-            if ($is_payment_confirmation) {
-                $fetchAll = false;
-            }
+            $search       = $request->input('search', '');
 
             $user = auth()->user();
-            $search = $request->input('search', '');
-
             if (!$user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
             // Query awal + eager loading
             $query = TeamMember::with([
-                'contingent.tournamentContingents.tournament.tournamentCategories',
+                'contingent.tournamentContingents.tournament', // masih dipakai buat tournament_name
                 'championshipCategory',
                 'matchCategory',
                 'ageCategory',
@@ -50,12 +45,12 @@ class TeamMemberController extends Controller
             // 🔍 Search
             if ($search) {
                 $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%$search%")
+                    $q->where('name', 'like', "%{$search}%")
                         ->orWhereHas('contingent', function ($qc) use ($search) {
-                            $qc->where('name', 'like', "%$search%");
+                            $qc->where('name', 'like', "%{$search}%");
                         })
                         ->orWhereHas('matchCategory', function ($qm) use ($search) {
-                            $qm->where('name', 'like', "%$search%");
+                            $qm->where('name', 'like', "%{$search}%");
                         });
                 });
             }
@@ -80,7 +75,7 @@ class TeamMemberController extends Controller
                 $query->where('category_class_id', $request->category_class_id);
             }
 
-            // 💳 Filter payment_status berdasarkan keikutsertaan peserta
+            // 💳 (Opsional) filter payment_status pakai keikutsertaan di tournamentParticipants
             if ($request->filled('payment_status')) {
                 if ($request->payment_status === 'paid') {
                     $query->whereHas('tournamentParticipants');
@@ -89,46 +84,46 @@ class TeamMemberController extends Controller
                 }
             }
 
+            /**
+             * 🔐 FILTER BERDASARKAN ROLE
+             *
+             * role_id:
+             * 1 = admin  -> lihat semua
+             * 2 = eo     -> semua team member yang kontingennya ikut turnamen EO ini
+             * 3 = manager-> hanya team member dari tim (contingent) yang owner_id = user.id
+             */
+            $roleId = (int) ($user->role_id ?? 0);
 
-            // 🔐 Filter berdasarkan grup user
-            if ($user->group && $user->group->name === 'Owner') {
-                if ($is_payment_confirmation) {
-                    $query->whereHas('billingDetails');
-                }
-            } elseif ($user->group && $user->group->name === 'Event PIC') {
-                $query->where(function ($q) use ($user) {
-                    $q->whereHas('contingent.tournamentContingents', function ($subQ) use ($user) {
-                        $subQ->where('tournament_id', $user->tournament_id);
-                    })->orWhereHas('contingent', function ($subQ) use ($user) {
-                        $subQ->where('owner_id', $user->id);
+            if ($roleId === 2) {
+                // EO → cari EventOrganizer dari user_id, lalu filter turnamen organizer_id = EO ini
+                $organizerId = EventOrganizer::where('user_id', $user->id)->value('id');
+
+                if ($organizerId) {
+                    $query->whereHas('contingent.tournamentContingents.tournament', function ($q) use ($organizerId) {
+                        $q->where('organizer_id', $organizerId);
                     });
-                });
-            } else {
+                } else {
+                    // EO belum punya profil → balikin kosong
+                    $query->whereRaw('1 = 0');
+                }
+            } elseif ($roleId === 3) {
+                // Manager → hanya kontingen yang dimiliki user ini
                 $query->whereHas('contingent', function ($q) use ($user) {
                     $q->where('owner_id', $user->id);
                 });
             }
+            // Admin / role lain → no extra filter
 
-            // 💰 Billing filter
-            if ($is_payment_confirmation) {
-                $query->whereHas('billingDetails');
-            }
-
-            // 📦 Ambil data
+            // 📦 Ambil data (all / paginate)
             $members = $fetchAll ? $query->get() : $query->paginate(10);
 
-            // 🔁 Transform untuk inject tournament_name & registration_fee
+            // 🔁 Transform kecil buat inject tournament_name (tanpa billing)
             $transform = function ($member) {
                 $tournamentContingent = $member->contingent?->tournamentContingents?->first();
-                $tournament = $tournamentContingent?->tournament;
+                $tournament           = $tournamentContingent?->tournament;
 
+                // buat dipakai di frontend (TeamMembersList.vue)
                 $member->tournament_name = $tournament?->name;
-                $member->exists_in_billing_details = BillingDetail::where('team_member_id', $member->id)->exists();
-
-                // Inject registration_fee yang sesuai
-                $matchedCategory = $tournament?->tournamentCategories
-                    ?->firstWhere('match_category_id', $member->match_category_id);
-                $member->registration_fee = $matchedCategory?->registration_fee;
 
                 return $member;
             };
@@ -136,7 +131,9 @@ class TeamMemberController extends Controller
             if ($fetchAll) {
                 $members = $members->map($transform);
             } else {
-                $members->setCollection($members->getCollection()->map($transform));
+                $members->setCollection(
+                    $members->getCollection()->map($transform)
+                );
             }
 
             return response()->json($members, 200);
@@ -144,6 +141,7 @@ class TeamMemberController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
 
 
 

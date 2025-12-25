@@ -80,6 +80,38 @@ class Tournament extends Model
         return $this->belongsTo(EventOrganizer::class, 'organizer_id');
     }
 
+    public function permit()
+    {
+        return $this->hasOne(TournamentPermit::class, 'tournament_id');
+    }
+
+    public function permits()
+    {
+        return $this->hasMany(TournamentPermit::class, 'tournament_id');
+    }
+
+    /**
+     * Permit aktif / terbaru (misalnya yang terakhir dibuat).
+     */
+    public function latestPermit()
+    {
+        return $this->hasOne(TournamentPermit::class, 'tournament_id')->latestOfMany();
+    }
+
+    /**
+     * Permit yang statusnya lagi active (submitted/accepted), kalau lu mau bikin scope lebih spesifik.
+     */
+    public function activePermit()
+    {
+        return $this->hasOne(TournamentPermit::class, 'tournament_id')
+            ->whereIn('status', [
+                TournamentPermit::STATUS_SUBMITTED,
+                TournamentPermit::STATUS_ACCEPTED,
+            ])
+            ->latestOfMany();
+    }
+
+
 
 
    

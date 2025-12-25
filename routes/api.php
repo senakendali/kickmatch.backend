@@ -48,6 +48,8 @@ use App\Http\Controllers\Api\EoOnboardingController;
 use App\Http\Controllers\BlogSettingController;
 use App\Http\Controllers\BlogCategoryController;
 
+use App\Http\Controllers\TournamentAgeCategoryController;
+
 /*
 |--------------------------------------------------------------------------
 | Export
@@ -106,6 +108,7 @@ Route::prefix('tournaments')->group(function () {
     Route::get('gallery', [TournamentController::class, 'getTournamentGallery']);
     Route::get('highlight', [TournamentController::class, 'getHighlightedTournament']);
     Route::get('active', [TournamentController::class, 'getActiveTournament']);
+    Route::middleware('auth:sanctum')->get('select', [TournamentController::class, 'getTournamentByRole']);
     Route::get('all', [TournamentController::class, 'getAllTournament']);
     Route::get('detail/{slug}', [TournamentController::class, 'getTournamentDetail']);
 
@@ -269,6 +272,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/tournaments/{id}/arenas', [TournamentArenaController::class, 'getByTournament']);
 
     Route::apiResource('tournament-contact-persons', TournamentContactPersonController::class);
+
+    Route::apiResource('tournament-age-categories', TournamentAgeCategoryController::class);
 
     /*
     |--------------------------------------------------------------------------

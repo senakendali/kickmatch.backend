@@ -13,6 +13,8 @@ use App\Models\TournamentContingent;
 use App\Models\Contingent;
 use App\Models\TeamMember;
 use App\Models\EventOrganizer; 
+use App\Models\TournamentPermit;
+
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -27,23 +29,49 @@ class TournamentSettingController extends Controller
     public function index(Request $request)
     {
         try {
-            $perPage = $request->get('per_page', 10); // default 10 per page
-            $search = $request->input('search', ''); // parameter pencarian
+            // support ?per_page= atau ?perPage=
+            $perPage = $request->get('per_page', $request->get('perPage', 10));
+            $search  = $request->input('search', '');
+
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthenticated.',
+                ], 401);
+            }
+
             $query = Tournament::query();
-    
-            // Filter jika ada keyword pencarian
+
+            // ===== FILTER BERDASARKAN ROLE =====
+            $roleId = (int) ($user->role_id ?? 0);
+
+            // HANYA EO yang di-limit ke turnamen miliknya
+            if ($roleId === 2) { // 2 = EO (sesuaikan kalau di sistem lu beda)
+                $organizerId = EventOrganizer::where('user_id', $user->id)->value('id');
+
+                if ($organizerId) {
+                    $query->where('organizer_id', $organizerId);
+                } else {
+                    // EO belum punya organizer profile → kosongin hasil
+                    $query->whereRaw('1 = 0');
+                }
+            }
+            // Owner / admin / role lain: ga perlu where organizer_id
+
+            // ===== SEARCH FILTER =====
             if (!empty($search)) {
                 $query->where('name', 'like', '%' . $search . '%');
             }
-    
-            // Paginate hasil query yang sudah difilter
+
+            // ===== PAGINATE =====
             $tournaments = $query->paginate($perPage);
-    
+
             return response()->json($tournaments);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to fetch tournaments',
-                'error' => $e->getMessage()
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
@@ -52,20 +80,57 @@ class TournamentSettingController extends Controller
     public function show($id)
     {
         try {
-            $tournament = Tournament::findOrFail($id);
+            // eager load permit biar 1x query
+            $tournament = Tournament::with('permit')->findOrFail($id);
 
-            $document = $tournament->document ? asset('storage/' . $tournament->document) : null;
-            $image = $tournament->image ? asset('storage/' . $tournament->image) : null;
-
+            // base array dari model
             $result = $tournament->toArray();
-            $result['document'] = $document;
-            $result['image'] = $image;
+
+            // URL dokumen utama & image
+            $result['document'] = $tournament->document
+                ? asset('storage/' . $tournament->document)
+                : null;
+
+            $result['image'] = $tournament->image
+                ? asset('storage/' . $tournament->image)
+                : null;
+
+            // kalau lu pakai rules_document juga, sekalian expose URL-nya
+            $result['rules_document'] = $tournament->rules_document
+                ? asset('storage/' . $tournament->rules_document)
+                : null;
+
+            // blok permit (kalau ada)
+            if ($tournament->permit) {
+                $permit = $tournament->permit;
+
+                $result['permit'] = [
+                    'id'               => $permit->id,
+                    'permit_type'      => $permit->permit_type,
+                    'permit_number'    => $permit->permit_number,
+                    'issuer'           => $permit->issuer,
+                    'issued_at'        => $permit->issued_at,
+                    'expired_at'       => $permit->expired_at,
+                    'status'           => $permit->status,
+                    'rejection_reason' => $permit->rejection_reason,
+                    'document_url'     => $permit->document_path
+                        ? asset('storage/' . $permit->document_path)
+                        : null,
+                    'reviewed_by'      => $permit->reviewed_by,
+                    'reviewed_at'      => $permit->reviewed_at,
+                ];
+            } else {
+                $result['permit'] = null;
+            }
 
             return response()->json($result);
         } catch (ModelNotFoundException $e) {
             return response()->json(['message' => 'Tournament not found'], 404);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to retrieve tournament', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'message' => 'Failed to retrieve tournament',
+                'error'   => $e->getMessage(),
+            ], 500);
         }
     }
 
@@ -108,10 +173,10 @@ class TournamentSettingController extends Controller
                 'tournament_image'       => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
                 'permit_document'        => 'nullable|file|mimes:pdf|max:10240',
 
-                // PERMIT DETAIL (belum disimpan ke DB tournaments)
+                // PERMIT DETAIL
                 'permit_type'        => 'nullable|string|max:100',
-                'permit_number'      => 'nullable|string|max:191',
-                'permit_issuer'      => 'nullable|string|max:191',
+                'permit_number'      => 'nullable|string|max:255',
+                'permit_issuer'      => 'nullable|string|max:255',
                 'permit_issued_at'   => 'nullable|date',
                 'permit_expired_at'  => 'nullable|date',
             ]);
@@ -142,7 +207,6 @@ class TournamentSettingController extends Controller
                 ], 401);
             }
 
-            // cari event organizer berdasarkan user_id
             $eventOrganizerId = EventOrganizer::where('user_id', $user->id)->value('id');
 
             if (!$eventOrganizerId) {
@@ -214,8 +278,8 @@ class TournamentSettingController extends Controller
 
             // --- Create Tournament ---
             $tournament = Tournament::create([
-                'organizer_id'         => $eventOrganizerId,  // ⬅️ ID dari table event_organizers
-                'created_by'           => $user->id,          // ⬅️ user yang bikin
+                'organizer_id'         => $eventOrganizerId,
+                'created_by'           => $user->id,
 
                 'tournament_format_id' => $validated['tournament_format_id'],
 
@@ -246,8 +310,24 @@ class TournamentSettingController extends Controller
                 'submitted_at'         => $submittedAt,
             ]);
 
-            // TODO: kalau nanti permit mau diseriusin, simpan $permitPath + detail permit
-            // ke table lain, misalnya tournament_permits.
+            // --- Tournament Permit (NEW) ---
+            if ($requiresPermit) {
+                $permitStatus = $submitNow ? 'submitted' : 'draft';
+
+                TournamentPermit::create([
+                    'tournament_id'  => $tournament->id,
+                    'permit_type'    => $validated['permit_type'] ?? null,
+                    'permit_number'  => $validated['permit_number'] ?? null,
+                    'issuer'         => $validated['permit_issuer'] ?? null,
+                    'issued_at'      => $validated['permit_issued_at'] ?? null,
+                    'expired_at'     => $validated['permit_expired_at'] ?? null,
+                    'document_path'  => $permitPath,
+                    'status'         => $permitStatus,
+                    'rejection_reason' => null,
+                    'reviewed_by'    => null,
+                    'reviewed_at'    => null,
+                ]);
+            }
 
             return response()->json([
                 'message' => 'Tournament created successfully.',
@@ -267,71 +347,227 @@ class TournamentSettingController extends Controller
         }
     }
 
+
     public function update(Request $request, $id)
     {
-        // Set batas maksimal upload (misalnya 100MB)
         ini_set('upload_max_filesize', '100M');
         ini_set('post_max_size', '100M');
 
         try {
             $tournament = Tournament::findOrFail($id);
 
+            // VALIDATION – samain sama store()
             $validated = $request->validate([
-                'name' => 'sometimes|string',
-                'tournament_document' => 'sometimes|nullable|file|mimes:pdf,doc,docx',
-                'tournament_image' => 'sometimes|nullable|image|mimes:jpeg,png,jpg',
-                'status' => 'sometimes|string',
-                'description' => 'sometimes|string',
-                'location' => 'sometimes|string',
-                'technical_meeting_date' => 'sometimes|date',
-                'start_date' => 'sometimes|date',
-                'end_date' => 'sometimes|date',
+                // BASIC
+                'name'        => 'required|string|max:255',
+                'slug'        => 'nullable|string|max:255',
+                'description' => 'nullable|string',
+                'status'      => 'required|in:active,inactive',
+                'is_highlight'=> 'nullable',
+
+                // LOCATION & MODE
+                'location'    => 'nullable|string|max:255',
+                'event_mode'  => 'required|in:offline,online,hybrid',
+                'visibility'  => 'required|in:public,unlisted,private',
+                'requires_permit' => 'nullable',
+
+                // SCHEDULE
+                'technical_meeting_date' => 'nullable|date',
+                'start_date'             => 'nullable|date',
+                'end_date'               => 'nullable|date',
+                'registration_open_at'   => 'nullable|date',
+                'registration_close_at'  => 'nullable|date',
+                'max_teams'              => 'nullable|integer|min:1',
+
+                // FORMAT
+                'tournament_format_id'   => 'required|integer|exists:tournament_formats,id',
+                'submit_now'             => 'nullable',
+
+                // FILES
+                'tournament_document'    => 'nullable|file|mimes:pdf,doc,docx|max:10240',
+                'rules_document'         => 'nullable|file|mimes:pdf|max:10240',
+                'tournament_image'       => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+                'permit_document'        => 'nullable|file|mimes:pdf|max:10240',
+
+                // PERMIT DETAIL
+                'permit_type'        => 'nullable|string|max:100',
+                'permit_number'      => 'nullable|string|max:255',
+                'permit_issuer'      => 'nullable|string|max:255',
+                'permit_issued_at'   => 'nullable|date',
+                'permit_expired_at'  => 'nullable|date',
             ]);
 
-            // Handle slug jika name berubah
-            if ($request->has('name')) {
-                $slug = Str::slug($request->name);
-                $originalSlug = $slug;
-                $counter = 1;
-
-                while (\App\Models\Tournament::where('slug', $slug)->where('id', '!=', $tournament->id)->exists()) {
-                    $slug = $originalSlug . '-' . $counter++;
+            // --- Cross field validation ---
+            if (!empty($validated['start_date']) && !empty($validated['end_date'])) {
+                if ($validated['end_date'] < $validated['start_date']) {
+                    throw ValidationException::withMessages([
+                        'end_date' => ['End date tidak boleh lebih kecil dari start date.'],
+                    ]);
                 }
-
-                $validated['slug'] = $slug;
             }
 
-            // Buat direktori jika belum ada
+            if (!empty($validated['registration_open_at']) && !empty($validated['registration_close_at'])) {
+                if ($validated['registration_close_at'] < $validated['registration_open_at']) {
+                    throw ValidationException::withMessages([
+                        'registration_close_at' => ['Registration close tidak boleh lebih kecil dari registration open.'],
+                    ]);
+                }
+            }
+
+            // --- SLUG: unik, tapi skip diri sendiri ---
+            $slug = $validated['slug'] ?? Str::slug($validated['name']);
+            $originalSlug = $slug;
+            $counter = 1;
+
+            while (
+                Tournament::where('slug', $slug)
+                    ->where('id', '!=', $tournament->id)
+                    ->exists()
+            ) {
+                $slug = $originalSlug . '-' . $counter++;
+            }
+
+            // --- DIRECTORIES ---
             if (!Storage::disk('public')->exists('uploads/tournament_documents')) {
                 Storage::disk('public')->makeDirectory('uploads/tournament_documents');
             }
-
             if (!Storage::disk('public')->exists('uploads/tournament_images')) {
                 Storage::disk('public')->makeDirectory('uploads/tournament_images');
             }
+            if (!Storage::disk('public')->exists('uploads/tournament_rules')) {
+                Storage::disk('public')->makeDirectory('uploads/tournament_rules');
+            }
+            if (!Storage::disk('public')->exists('uploads/tournament_permits')) {
+                Storage::disk('public')->makeDirectory('uploads/tournament_permits');
+            }
 
-            // Simpan file baru jika dikirim
+            // --- FILE HANDLING ---
             if ($request->hasFile('tournament_document')) {
-                $documentPath = $request->file('tournament_document')->store('uploads/tournament_documents', 'public');
-                $validated['document'] = $documentPath;
+                if ($tournament->document && Storage::disk('public')->exists($tournament->document)) {
+                    Storage::disk('public')->delete($tournament->document);
+                }
+
+                $documentPath = $request->file('tournament_document')
+                    ->store('uploads/tournament_documents', 'public');
+                $tournament->document = $documentPath;
+            }
+
+            if ($request->hasFile('rules_document')) {
+                if ($tournament->rules_document && Storage::disk('public')->exists($tournament->rules_document)) {
+                    Storage::disk('public')->delete($tournament->rules_document);
+                }
+
+                $rulesPath = $request->file('rules_document')
+                    ->store('uploads/tournament_rules', 'public');
+                $tournament->rules_document = $rulesPath;
             }
 
             if ($request->hasFile('tournament_image')) {
-                $imagePath = $request->file('tournament_image')->store('uploads/tournament_images', 'public');
-                $validated['image'] = $imagePath;
+                if ($tournament->image && Storage::disk('public')->exists($tournament->image)) {
+                    Storage::disk('public')->delete($tournament->image);
+                }
+
+                $imagePath = $request->file('tournament_image')
+                    ->store('uploads/tournament_images', 'public');
+                $tournament->image = $imagePath;
             }
 
-            $tournament->update($validated);
+            $permitDocumentPath = null;
+            if ($request->hasFile('permit_document')) {
+                $permitDocumentPath = $request->file('permit_document')
+                    ->store('uploads/tournament_permits', 'public');
+            }
 
-            return response()->json($tournament);
+            // --- Boolean & flow ---
+            $isHighlight    = $request->boolean('is_highlight');
+            $requiresPermit = $request->boolean('requires_permit');
+            $submitNow      = $request->boolean('submit_now');
+
+            if ($submitNow && $tournament->approval_status === 'draft') {
+                $tournament->approval_status = 'submitted';
+                $tournament->submitted_at    = now();
+            }
+
+            // --- UPDATE FIELDS ---
+            $tournament->tournament_format_id   = $validated['tournament_format_id'];
+            $tournament->name                   = $validated['name'];
+            $tournament->slug                   = $slug;
+
+            $tournament->status                 = $validated['status'];
+            $tournament->is_highlight           = $isHighlight;
+
+            $tournament->description            = $validated['description'] ?? null;
+            $tournament->location               = $validated['location'] ?? null;
+            $tournament->event_mode             = $validated['event_mode'];
+            $tournament->technical_meeting_date = $validated['technical_meeting_date'] ?? null;
+            $tournament->start_date             = $validated['start_date'] ?? null;
+            $tournament->end_date               = $validated['end_date'] ?? null;
+
+            $tournament->visibility             = $validated['visibility'];
+            $tournament->registration_open_at   = $validated['registration_open_at'] ?? null;
+            $tournament->registration_close_at  = $validated['registration_close_at'] ?? null;
+            $tournament->max_teams              = $validated['max_teams'] ?? null;
+            $tournament->requires_permit        = $requiresPermit;
+
+            $tournament->save();
+
+            // --- Tournament Permit UPSERT ---
+            if ($requiresPermit) {
+                $permitStatus = $submitNow ? 'submitted' : 'draft';
+
+                $permit = TournamentPermit::where('tournament_id', $tournament->id)->first();
+
+                if (!$permit) {
+                    $permit = new TournamentPermit();
+                    $permit->tournament_id = $tournament->id;
+                    $permit->status        = $permitStatus;
+                }
+
+                // kalau status sebelumnya udah accepted/rejected, jangan di-downgrade kalau nggak submit
+                if ($permit->status === 'draft' || $permit->status === 'submitted') {
+                    $permit->status = $permitStatus;
+                }
+
+                $permit->permit_type   = $validated['permit_type'] ?? $permit->permit_type;
+                $permit->permit_number = $validated['permit_number'] ?? $permit->permit_number;
+                $permit->issuer        = $validated['permit_issuer'] ?? $permit->issuer;
+                $permit->issued_at     = $validated['permit_issued_at'] ?? $permit->issued_at;
+                $permit->expired_at    = $validated['permit_expired_at'] ?? $permit->expired_at;
+
+                if ($permitDocumentPath) {
+                    if ($permit->document_path && Storage::disk('public')->exists($permit->document_path)) {
+                        Storage::disk('public')->delete($permit->document_path);
+                    }
+                    $permit->document_path = $permitDocumentPath;
+                }
+
+                // reviewed_by/reviewed_at/rejection_reason biar admin yang isi
+                $permit->save();
+            }
+
+            return response()->json([
+                'message' => 'Tournament updated successfully.',
+                'data'    => $tournament->fresh(),
+            ], 200);
+
         } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'Tournament not found'], 404);
+            return response()->json([
+                'message' => 'Tournament not found',
+            ], 404);
         } catch (ValidationException $e) {
-            return response()->json(['message' => 'Validation failed', 'errors' => $e->errors()], 422);
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors'  => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to update tournament', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'message' => 'Failed to update tournament',
+                'error'   => $e->getMessage(),
+            ], 500);
         }
     }
+
+
 
 
     public function destroy($id)

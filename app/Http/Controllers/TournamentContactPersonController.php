@@ -3,17 +3,67 @@
 namespace App\Http\Controllers;
 
 use App\Models\TournamentContactPerson;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
+use App\Models\EventOrganizer;
 
 class TournamentContactPersonController extends Controller
 {
     public function index(Request $request)
     {
         try {
-            $contacts = TournamentContactPerson::with('tournament')->paginate($request->get('per_page', 10));
+            $perPage = $request->get('per_page', $request->get('perPage', 10));
+            $search  = $request->input('search', '');
+
+            // ambil user dari guard (sanctum/passport)
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthenticated.',
+                ], 401);
+            }
+
+            // base query
+            $query = TournamentContactPerson::with('tournament');
+
+            $roleId = (int) ($user->role_id ?? 0);
+
+            // === HANYA EO YANG DI-FILTER ===
+            if ($roleId === 2) { // 2 = EO
+                // ambil ID EO (event_organizers.id) berdasarkan user_id
+                $organizerId = EventOrganizer::where('user_id', $user->id)->value('id');
+
+                if ($organizerId) {
+                    // cuma contact person dari tournament milik EO ini
+                    $query->whereHas('tournament', function ($q) use ($organizerId) {
+                        $q->where('organizer_id', $organizerId);
+                    });
+                } else {
+                    // EO belum punya profile / belum di-link → kosongin saja
+                    $query->whereRaw('1 = 0');
+                }
+            }
+            // admin / owner / role lain: ga di-filter apa pun
+
+            // optional: search
+            if (!empty($search)) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', '%' . $search . '%')
+                      ->orWhere('description', 'like', '%' . $search . '%')
+                      ->orWhere('phone', 'like', '%' . $search . '%')
+                      ->orWhere('email', 'like', '%' . $search . '%');
+                });
+            }
+
+            $contacts = $query->paginate($perPage);
+
             return response()->json($contacts, 200);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Unable to fetch data', 'message' => $e->getMessage()], 500);
+            return response()->json([
+                'error'   => 'Unable to fetch data',
+                'message' => $e->getMessage()
+            ], 500);
         }
     }
 

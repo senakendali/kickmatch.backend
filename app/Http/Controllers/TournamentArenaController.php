@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\TournamentArena;
+use App\Models\EventOrganizer;
 use Illuminate\Http\Request;
 
 class TournamentArenaController extends Controller
@@ -10,12 +11,62 @@ class TournamentArenaController extends Controller
     public function index(Request $request)
     {
         try {
-            $arenas = TournamentArena::with('tournament')->paginate($request->get('per_page', 10));
+            // support ?per_page= dan ?perPage=
+            $perPage = $request->get('per_page', $request->get('perPage', 10));
+            $search  = $request->input('search', '');
+
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthenticated.',
+                ], 401);
+            }
+
+            // base query
+            $query = TournamentArena::with('tournament');
+
+            // casting dulu biar aman
+            $roleId = (int) ($user->role_id ?? 0);
+
+            // === HANYA EO YANG DI-FILTER ===
+            // owner / admin / role lain dapat semua data
+            if ($roleId === 2) { // 2 = EO
+                // cari EO profile berdasar user_id
+                $organizerId = EventOrganizer::where('user_id', $user->id)->value('id');
+
+                if ($organizerId) {
+                    // hanya arena dari tournament yang organizer_id = EO ini
+                    $query->whereHas('tournament', function ($q) use ($organizerId) {
+                        $q->where('organizer_id', $organizerId);
+                    });
+                } else {
+                    // EO belum punya profile -> balikin kosong tapi tetap berbentuk pagination
+                    $query->whereRaw('1 = 0');
+                }
+            }
+
+            // optional: search by arena name / tournament name
+            if (!empty($search)) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', '%' . $search . '%')
+                      ->orWhereHas('tournament', function ($sub) use ($search) {
+                          $sub->where('name', 'like', '%' . $search . '%');
+                      });
+                });
+            }
+
+            $arenas = $query->paginate($perPage);
+
             return response()->json($arenas, 200);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Unable to fetch data', 'message' => $e->getMessage()], 500);
+            return response()->json([
+                'error'   => 'Unable to fetch data',
+                'message' => $e->getMessage(),
+            ], 500);
         }
     }
+
 
     public function getByTournament($tournamentId)
     {

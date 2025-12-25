@@ -13,6 +13,7 @@ use App\Models\TournamentContingent;
 use App\Models\Contingent;
 use App\Models\TeamMember;
 use App\Models\Billing;
+use App\Models\EventOrganizer;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -107,6 +108,47 @@ class TournamentController extends Controller
             return response()->json($allTournament, 200);
         } catch (\Exception $e) {
             return response()->json(['error' => 'An error occurred', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getTournamentByRole(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthenticated.',
+                ], 401);
+            }
+
+            $roleId = (int) $user->role_id;
+
+            $query = Tournament::query();
+
+            // Kalau EO: hanya turnamen milik EO tsb
+            if ($roleId === 2) { // 2 = EO (sesuai mapping role lu)
+                $organizerId = EventOrganizer::where('user_id', $user->id)->value('id');
+
+                if (!$organizerId) {
+                    // EO belum punya profil organizer → balikin kosong aja
+                    return response()->json(collect(), 200);
+                }
+
+                $query->where('organizer_id', $organizerId);
+            }
+            // Kalau owner/admin/manager → gak dibatasi (lihat semua turnamen)
+
+            $allTournament = $query
+                ->orderBy('name')
+                ->get();
+
+            return response()->json($allTournament, 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error'   => 'An error occurred',
+                'message' => $e->getMessage(),
+            ], 500);
         }
     }
 

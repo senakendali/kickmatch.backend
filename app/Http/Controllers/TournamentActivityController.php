@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 use App\Models\Tournament;
 use App\Models\TournamentActivity;
+use App\Models\EventOrganizer;
 
 use Illuminate\Http\Request;
 
@@ -11,11 +12,48 @@ class TournamentActivityController extends Controller
     public function index(Request $request)
     {
         try {
-            // Use pagination with a default of 10 items per page
-            $categoryClasses = TournamentActivity::with('tournament')->paginate($request->get('per_page', 10));
-            return response()->json($categoryClasses, 200);
+            // support ?per_page= dan ?perPage=
+            $perPage = $request->get('per_page', $request->get('perPage', 10));
+
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthenticated.',
+                ], 401);
+            }
+
+            // base query
+            $query = TournamentActivity::with('tournament');
+
+            // casting dulu biar aman
+            $roleId = (int) ($user->role_id ?? 0);
+
+            // === HANYA EO YANG DI-FILTER ===
+            // owner / admin / role lain dapat semua data
+            if ($roleId === 2) { // 2 = EO (sesuaikan kalau beda)
+                // cari EO profile berdasarkan user_id
+                $organizerId = EventOrganizer::where('user_id', $user->id)->value('id');
+
+                if ($organizerId) {
+                    // hanya activity dari tournament yang organizer_id = organizerId ini
+                    $query->whereHas('tournament', function ($q) use ($organizerId) {
+                        $q->where('organizer_id', $organizerId);
+                    });
+                } else {
+                    // EO belum punya profile -> hasil kosong tapi tetap bentuk pagination
+                    $query->whereRaw('1 = 0');
+                }
+            }
+
+            $activities = $query->paginate($perPage);
+
+            return response()->json($activities, 200);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Unable to fetch data', 'message' => $e->getMessage()], 500);
+            return response()->json([
+                'error'   => 'Unable to fetch data',
+                'message' => $e->getMessage(),
+            ], 500);
         }
     }
 
