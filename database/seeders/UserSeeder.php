@@ -17,7 +17,7 @@ class UserSeeder extends Seeder
 
         
         $data['name'] =  'Administrator';
-        $data['email'] =  'admin@mandalaarena.id';
+        $data['email'] =  'admin@kickmatch.id';
         $data['password'] = Hash::make('Lumberjack2000');
        
         User::firstOrCreate($data);

@@ -23,6 +23,7 @@ class DatabaseSeeder extends Seeder
             GameTypesSeeder::class,
             TournamentFormatsSeeder::class,
             AgeCategoriesSeeder::class,
+            UserSeeder::class,
         ]);
     }
 }
