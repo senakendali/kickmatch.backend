@@ -67,7 +67,11 @@ class AuthController extends Controller
                 'password' => 'required|min:6',
             ]);
 
-            $user = User::where('email', $request->email)->first();
+            // ✅ ambil relasi kalau ada (opsional)
+            $user = User::query()
+                ->where('email', $request->email)
+                // ->with(['organizer']) // kalau ada relasi organizer()
+                ->first();
 
             if (!$user || !Hash::check($request->password, $user->password)) {
                 return response()->json([
@@ -79,15 +83,33 @@ class AuthController extends Controller
             $token = $user->createToken('auth_token')->plainTextToken;
 
             // =========================
-            // ONBOARDING LOGIC
+            // ✅ ONBOARDING LOGIC FIX
             // =========================
-            $needsOnboarding = is_null($user->tournament_id);
-
-            $dashboardPath = match ($user->role_id) {
+            $dashboardPath = match ((int) $user->role_id) {
                 2 => '/eo/dashboard',
                 3 => '/manager/dashboard',
                 default => '/admin',
             };
+
+            // Default: gak perlu onboarding
+            $needsOnboarding = false;
+
+            // Role EO doang yang wajib onboarding
+            if ((int) $user->role_id === 2) {
+                // ✅ indikator onboarding = sudah punya profile EO (bukan tournament_id)
+                // Pilih salah satu sesuai struktur DB lu:
+                $needsOnboarding = empty($user->organizer_id)
+                    // && empty(optional($user->organizer)->id) // kalau relasi ada
+                    ;
+
+                // fallback kalau lu punya flag onboarding_completed:
+                if (property_exists($user, 'onboarding_completed') && $user->onboarding_completed) {
+                    $needsOnboarding = false;
+                }
+            }
+
+            // Optional: biar FE gampang, kasih path redirect
+            $onboardingPath = '/onboarding?intent=eo';
 
             return response()->json([
                 'success' => true,
@@ -95,9 +117,9 @@ class AuthController extends Controller
                 'access_token' => $token,
                 'token_type' => 'Bearer',
 
-                // 🔥 tambahan penting
-                'needs_onboarding' => $needsOnboarding,
+                'needs_onboarding' => (bool) $needsOnboarding,
                 'dashboard_path'   => $dashboardPath,
+                'onboarding_path'  => $onboardingPath,
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
@@ -112,6 +134,7 @@ class AuthController extends Controller
             ], 500);
         }
     }
+
 
 
     public function register(Request $request)

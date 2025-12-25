@@ -24,4 +24,16 @@ class EventOrganizer extends Model
         'submitted_at' => 'datetime',
         'verified_at' => 'datetime',
     ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function tournaments()
+    {
+        return $this->hasMany(Tournament::class, 'organizer_id'); 
+    }
+
+
 }

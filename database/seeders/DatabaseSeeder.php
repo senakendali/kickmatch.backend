@@ -15,8 +15,14 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
-        $this->call([ 
+       /* $this->call([ 
             UserGroupsTableSeeder::class, // other seeders can be added here 
+        ]);*/
+
+        $this->call([
+            GameTypesSeeder::class,
+            TournamentFormatsSeeder::class,
+            AgeCategoriesSeeder::class,
         ]);
     }
 }

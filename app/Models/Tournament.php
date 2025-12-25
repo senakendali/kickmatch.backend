@@ -75,6 +75,10 @@ class Tournament extends Model
         return $this->belongsToMany(Contingent::class, 'tournament_contingents');
     }
 
+    public function organizer()
+    {
+        return $this->belongsTo(EventOrganizer::class, 'organizer_id');
+    }
 
 
 
