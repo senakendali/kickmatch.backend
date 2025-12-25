@@ -19,6 +19,8 @@ class UserSeeder extends Seeder
         $data['name'] =  'Administrator';
         $data['email'] =  'admin@kickmatch.id';
         $data['password'] = Hash::make('Lumberjack2000');
+        $data['group_id'] =  1;
+        $data['role_id'] =  1;
        
         User::firstOrCreate($data);
 
