@@ -19,4 +19,9 @@ class TournamentContingent extends Model
     {
         return $this->belongsTo(Contingent::class);
     }
+
+    public function ageCategory()
+    {
+        return $this->belongsTo(AgeCategory::class, 'age_category_id');
+    }
 }

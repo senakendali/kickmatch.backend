@@ -50,6 +50,10 @@ use App\Http\Controllers\BlogCategoryController;
 
 use App\Http\Controllers\TournamentAgeCategoryController;
 
+use App\Http\Controllers\TournamentDrawingController;
+
+use App\Http\Controllers\Admin\TournamentContingentController;
+
 /*
 |--------------------------------------------------------------------------
 | Export
@@ -274,6 +278,26 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('tournament-contact-persons', TournamentContactPersonController::class);
 
     Route::apiResource('tournament-age-categories', TournamentAgeCategoryController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tournament Drawings / Drawing Setups
+    |--------------------------------------------------------------------------
+    */
+    Route::apiResource('tournament-drawings', TournamentDrawingController::class);
+
+    
+    /*
+    |--------------------------------------------------------------------------
+    | Tournament Teams 
+    |--------------------------------------------------------------------------
+    */
+    Route::apiResource('tournament-contingents', TournamentContingentController::class)
+        ->only(['index', 'store', 'show', 'update', 'destroy']);
+
+    // extra helper endpoint buat form Join Tournament
+    Route::get('tournament-contingents/form-data/{contingent}', [TournamentContingentController::class, 'formData']);
+    Route::get('tournament-contingents/age-categories/{tournament}', [TournamentContingentController::class, 'ageCategoriesByTournament']);
 
     /*
     |--------------------------------------------------------------------------

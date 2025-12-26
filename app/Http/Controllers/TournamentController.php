@@ -28,39 +28,127 @@ class TournamentController extends Controller
     
     public function index(Request $request)
     {
-        $user = $request->user();
-        $fetchAll = $request->query('fetch_all', false);
+        try {
+            $perPage      = $request->get('per_page', $request->get('perPage', 10));
+            $user         = $request->user();
 
-        if (!$user) {
-            return response()->json(['message' => 'Unauthenticated'], 401);
+            if (!$user) {
+                return response()->json(['message' => 'Unauthenticated'], 401);
+            }
+
+            $groupName    = optional($user->group)->name; // aman kalau null
+            $roleId       = (int) ($user->role_id ?? 0);
+            $search       = trim($request->input('search', ''));
+            $tournamentId = $request->input('tournament_id');
+
+            $query = Contingent::query();
+
+            /**
+             * 🔐 Filter utama berdasarkan role
+             *
+             * - role_id == 2 (EO):
+             *      hanya contingent yang ikut turnamen milik EO ini
+             *      (tournaments.organizer_id = event_organizers.id)
+             *
+             * - lainnya:
+             *      pakai pola lama:
+             *          * tournament_id (jika ada) → filter lewat pivot
+             *          * Owner/User → bebas
+             *          * selain itu → hanya contingent miliknya (owner_id)
+             */
+
+            if ($roleId === 2) {
+                // 2 = EO
+                $organizerId = EventOrganizer::where('user_id', $user->id)->value('id');
+
+                if ($organizerId) {
+                    $query->whereHas('tournaments', function ($q) use ($organizerId, $tournamentId) {
+                        $q->where('organizer_id', $organizerId);
+
+                        // kalau frontend kirim tournament_id, filter sekalian
+                        if ($tournamentId) {
+                            $q->where('tournaments.id', $tournamentId);
+                        }
+                    });
+                } else {
+                    // EO belum punya profil, amanin: kosongkan hasil
+                    $query->whereRaw('1 = 0');
+                }
+            } else {
+                // 🎯 Filter by tournament_id (kalau dikirim dari frontend)
+                if ($tournamentId) {
+                    $query->whereHas('tournamentContingents', function ($q) use ($tournamentId) {
+                        $q->where('tournament_id', $tournamentId);
+                    });
+                }
+
+                // 🔐 Filter berdasarkan group name (pola lama)
+                if ($groupName === 'Owner' || $groupName === 'Team Manager') {
+                    // Owner / User → bisa lihat semua (hanya dibatasi filter di atas)
+                } elseif ($groupName === 'Event Organizer') {
+                    // fallback lama: kalau masih ada user->tournament_id
+                    $effectiveTournamentId = $tournamentId ?: $user->tournament_id;
+
+                    if ($effectiveTournamentId) {
+                        $query->whereHas('tournamentContingents', function ($q) use ($effectiveTournamentId) {
+                            $q->where('tournament_id', $effectiveTournamentId);
+                        });
+                    } else {
+                        return response()->json([
+                            'data'    => [],
+                            'message' => 'No tournament assigned for this user.',
+                        ], 200);
+                    }
+                } else {
+                    // Default: anggap pemilik club → hanya contingent miliknya
+                    $query->where('owner_id', $user->id);
+                }
+            }
+
+            // 🔍 Search (diletakkan setelah filter role/tournament)
+            if ($search !== '') {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', '%' . $search . '%')
+                        ->orWhere('pic_name', 'like', '%' . $search . '%')
+                        ->orWhere('pic_email', 'like', '%' . $search . '%')
+                        ->orWhere('pic_phone', 'like', '%' . $search . '%');
+                });
+            }
+
+            // 📦 Query with relasi & count
+            $contingents = $query
+                ->with(['tournaments' => function ($q) {
+                    $q->select('tournaments.id', 'name');
+                }])
+                ->withCount('teamMembers')
+                ->paginate($perPage);
+
+            // 🔁 Transform response: satukan nama turnamen jadi string
+            $transformed = $contingents->getCollection()->transform(function ($item) {
+                $tournamentNames = $item->tournaments
+                    ? $item->tournaments->pluck('name')->filter()->implode(', ')
+                    : '';
+
+                return [
+                    'id'                 => $item->id,
+                    'name'               => $item->name,
+                    'pic_name'           => $item->pic_name,
+                    'pic_email'          => $item->pic_email,
+                    'pic_phone'          => $item->pic_phone,
+                    'team_members_count' => $item->team_members_count,
+                    'tournament_name'    => $tournamentNames,
+                ];
+            });
+
+            $contingents->setCollection($transformed);
+
+            return response()->json($contingents);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
         }
-
-        if ($user->group && ($user->group->name === 'Owner' || $user->group->name === 'User')) {
-            // Owner bisa lihat semua turnamen
-            $query = Tournament::query();
-        } elseif ($user->group && $user->group->name === 'Event PIC') {
-            // Admin hanya lihat 1 turnamen yang dia pegang
-            $query = Tournament::where('id', $user->tournament_id);
-        } else {
-            // User lain tidak bisa akses
-            return response()->json([], 403);
-        }
-
-        $query->orderBy('id', 'desc');
-
-        $tournaments = $fetchAll
-            ? $query->get()
-            : $query->paginate(10);
-
-        // Rewrite path document dan image
-       /* $tournaments->getCollection()->transform(function ($tournament) {
-            $tournament->document = $tournament->document ? asset('storage/' . $tournament->document) : null;
-            $tournament->image = $tournament->image ? asset('storage/' . $tournament->image) : null;
-            return $tournament;
-        });*/
-
-        return response()->json($tournaments, 200);
     }
+
+
 
 
     

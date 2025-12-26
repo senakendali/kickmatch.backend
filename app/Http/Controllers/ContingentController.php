@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Contingent;
 use App\Models\TeamStaff;
 use App\Models\TournamentContingent;
+use App\Models\EventOrganizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
@@ -23,14 +24,59 @@ class ContingentController extends Controller
     public function index(Request $request)
     {
         try {
-            $user = auth()->user();
-            $search = $request->input('search', '');
+            $perPage      = $request->get('per_page', $request->get('perPage', 10));
+            $search       = trim($request->input('search', ''));
             $tournamentId = $request->input('tournament_id');
 
-            $query = Contingent::query();
+            // 🔐 Ambil user dari guard (sanctum/passport)
+            $user = $request->user();
 
-            // 🔍 Search
-            if ($search) {
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthenticated.',
+                ], 401);
+            }
+
+            // Base query
+            $query  = Contingent::query();
+            $roleId = (int) ($user->role_id ?? 0);
+
+            /**
+             * 🎯 Filter berdasarkan role:
+             * - role_id == 2 (EO): hanya lihat contingent yang ikut tournament milik EO ini
+             * - role lain (Owner/Admin/User): sementara dibiarkan lihat semua (plus filter tournament_id & search)
+             */
+
+            if ($roleId === 2) { // 2 = EO
+                // Ambil ID EO di tabel event_organizers
+                $organizerId = EventOrganizer::where('user_id', $user->id)->value('id');
+
+                if ($organizerId) {
+                    // Contingent yang terhubung ke tournaments dengan organizer_id = EO ini
+                    $query->whereHas('tournaments', function ($q) use ($organizerId, $tournamentId) {
+                        $q->where('organizer_id', $organizerId);
+
+                        // Kalau di-request spesifik tournament_id, filter sekalian
+                        if ($tournamentId) {
+                            $q->where('tournaments.id', $tournamentId);
+                        }
+                    });
+                } else {
+                    // EO belum punya profile → kosong aja
+                    $query->whereRaw('1 = 0');
+                }
+            } else {
+                // role selain EO
+                if ($tournamentId) {
+                    // Kalau ada filter tournament_id, pakai pivot
+                    $query->whereHas('tournamentContingents', function ($q) use ($tournamentId) {
+                        $q->where('tournament_id', $tournamentId);
+                    });
+                }
+            }
+
+            // 🔍 Optional search
+            if ($search !== '') {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', '%' . $search . '%')
                         ->orWhere('pic_name', 'like', '%' . $search . '%')
@@ -39,56 +85,42 @@ class ContingentController extends Controller
                 });
             }
 
-            // 🎯 Filter by tournament_id
-            if ($tournamentId) {
-                $query->whereHas('tournamentContingents', function ($q) use ($tournamentId) {
-                    $q->where('tournament_id', $tournamentId);
-                });
-            }
-
-            // 🔐 Filter berdasarkan role user
-            if ($user->group && $user->group->name === 'Owner') {
-                // lihat semua
-            } elseif ($user->group && $user->group->name === 'Event PIC') {
-                $query->where(function ($q) use ($user) {
-                    $q->whereHas('tournamentContingents', function ($subQ) use ($user) {
-                        $subQ->where('tournament_id', $user->tournament_id);
-                    })->orWhere('owner_id', $user->id);
-                });
-            } else {
-                $query->where('owner_id', $user->id);
-            }
-
-            // 📦 Query with relasi & count
+            // 📦 Query + relasi + count
             $contingents = $query
                 ->with(['tournaments' => function ($q) {
                     $q->select('tournaments.id', 'name');
                 }])
                 ->withCount('teamMembers')
-                ->paginate(10);
+                ->paginate($perPage);
 
-            // 🔁 Transform response untuk format multiple tournament_name
+            // 🔁 Transform response biar clean
             $transformed = $contingents->getCollection()->transform(function ($item) {
-                $tournamentNames = $item->tournaments->pluck('name')->filter()->implode(', ');
+                $tournamentNames = $item->tournaments
+                    ? $item->tournaments->pluck('name')->filter()->implode(', ')
+                    : '';
 
                 return [
-                    'id' => $item->id,
-                    'name' => $item->name,
-                    'pic_name' => $item->pic_name,
-                    'pic_email' => $item->pic_email,
-                    'pic_phone' => $item->pic_phone,
+                    'id'                 => $item->id,
+                    'name'               => $item->name,
+                    'pic_name'           => $item->pic_name,
+                    'pic_email'          => $item->pic_email,
+                    'pic_phone'          => $item->pic_phone,
                     'team_members_count' => $item->team_members_count,
-                    'tournament_name' => $tournamentNames,
+                    'tournament_name'    => $tournamentNames,
                 ];
             });
 
             $contingents->setCollection($transformed);
 
-            return response()->json($contingents);
+            return response()->json($contingents, 200);
         } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
+            return response()->json([
+                'error'   => 'Unable to fetch data',
+                'message' => $e->getMessage()
+            ], 500);
         }
     }
+
 
     public function fetchAll(){
         try {
