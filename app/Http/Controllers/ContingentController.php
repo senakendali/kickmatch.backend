@@ -205,43 +205,81 @@ class ContingentController extends Controller
     public function show($id)
     {
         try {
-            $contingent = Contingent::with([
-                'tournaments:id,name',
-                'staff:id,contingent_id,staff_role_id,full_name,phone,email,is_primary,ordering',
-            ])->findOrFail($id);
+            $contingent = Contingent::with(['tournaments', 'district'])
+                ->findOrFail($id);
 
-            // Normalizer: pastikan selalu jadi URL absolut
-            $toUrl = function ($path) {
-                if (empty($path)) return null;
+            // 🔹 City (biar enak dipakai di frontend)
+            $district = $contingent->district;
+            $cityName = null;
 
-                // Sudah absolut (http/https) atau data URL
-                if (Str::startsWith($path, ['http://','https://','data:'])) {
-                    return $path;
-                }
+            if ($district) {
+                // Sesuaikan sama kolom yang ada di tabel districts lu
+                $cityName = $district->name
+                    ?? $district->district_name
+                    ?? null;
+            }
 
-                // Sudah /storage/... → jadikan absolut pakai URL::to()
-                if (Str::startsWith($path, ['/storage/', 'storage/'])) {
-                    $p = Str::startsWith($path, '/storage/') ? $path : '/'.$path;
-                    return URL::to($p);
-                }
+            $contingent->setAttribute('city', $cityName);
 
-                // Path relatif di disk public → ambil /storage/... lalu absolutkan
-                return URL::to(Storage::disk('public')->url($path));
-            };
+            // 🔹 Build FULL URL untuk logo & jersey dari backend
+            // Asumsi:
+            // - Di DB field `logo`, `jersey_home_image`, `jersey_away_image`
+            //   nyimpan path relatif seperti:
+            //   - "uploads/contingent_logos/logo-xxx.png"
+            //   - "uploads/contingent_jerseys/jersey-home-xxx.png"
+            //   - dsb
+            // - Kalau suatu saat lu simpan full URL, kode ini tetap aman
+            $contingent->setAttribute(
+                'logo_url',
+                $this->buildPublicUrl($contingent->logo)
+            );
 
-            $contingent->logo              = $toUrl($contingent->logo);
-            $contingent->jersey_home_image = $toUrl($contingent->jersey_home_image);
-            $contingent->jersey_away_image = $toUrl($contingent->jersey_away_image);
+            $contingent->setAttribute(
+                'jersey_home_image_url',
+                $this->buildPublicUrl($contingent->jersey_home_image)
+            );
 
-            return response()->json(['data' => $contingent], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['error' => 'Contingent not found.'], 404);
+            $contingent->setAttribute(
+                'jersey_away_image_url',
+                $this->buildPublicUrl($contingent->jersey_away_image)
+            );
+
+            return response()->json([
+                'data' => $contingent,
+            ], 200);
         } catch (\Throwable $e) {
-            return response()->json(['error' => 'Failed to fetch contingent.','detail' => $e->getMessage()], 500);
+            return response()->json([
+                'error' => 'Contingent not found.',
+            ], 404);
         }
     }
 
-    public function store(Request $request)
+    /**
+     * Helper: bikin URL publik dari path file yang disimpan di DB.
+     *
+     * - Kalau sudah http(s) → langsung balikin apa adanya.
+     * - Kalau cuma path relatif (misal: "uploads/contingent_logos/xxx.png")
+     *   → dibikin jadi: APP_URL + "/storage/" + path
+     */
+    protected function buildPublicUrl(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        // Kalau sudah full URL, jangan diapa-apain
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+            return $path;
+        }
+
+        // Asumsi public/storage adalah symlink ke storage/app/public
+        // dan file disimpan di storage/app/public/uploads/...
+        return asset('storage/' . ltrim($path, '/'));
+    }
+
+
+
+   public function store(Request $request)
     {
         $ownerId = auth()->id();
 
@@ -257,7 +295,11 @@ class ContingentController extends Controller
             'subdistrict_id' => ['required','exists:subdistricts,id'],
             'ward_id'        => ['required','exists:wards,id'],
             'address'        => ['required','string','max:255'],
-            'tournament_id'  => ['required','exists:tournaments,id'],
+
+            // ✅ Tournament enrollment (opsional)
+            'tournament_id'  => ['nullable','exists:tournaments,id'],
+            'age_category_id'=> ['nullable','exists:age_categories,id','required_with:tournament_id'],
+            'gender'         => ['nullable','required_with:tournament_id', Rule::in(['male','female','mixed'])],
 
             'logo'               => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
             'jersey_home_hex'    => ['nullable','regex:/^#[0-9A-Fa-f]{6}$/'],
@@ -311,7 +353,7 @@ class ContingentController extends Controller
             ];
 
             // Uploads → simpan PATH relatif
-            $slug = \Illuminate\Support\Str::slug($data['name'] ?? 'team');
+            $slug = Str::slug($data['name'] ?? 'team');
 
             if ($request->hasFile('logo')) {
                 $filename = 'logo-'.$slug.'-'.time().'.'.$request->file('logo')->extension();
@@ -329,11 +371,19 @@ class ContingentController extends Controller
             // Create contingent
             $contingent = Contingent::create($data);
 
-            // Pivot tournament
-            TournamentContingent::firstOrCreate([
-                'tournament_id' => (int) $request->tournament_id,
-                'contingent_id' => $contingent->id,
-            ]);
+            // ✅ AUTO JOIN TOURNAMENT (kalau user pilih di form)
+            if ($request->filled('tournament_id')) {
+                TournamentContingent::updateOrCreate(
+                    [
+                        'tournament_id' => (int) $request->input('tournament_id'),
+                        'contingent_id' => $contingent->id,
+                    ],
+                    [
+                        'age_category_id' => $request->input('age_category_id'),
+                        'gender'          => $request->input('gender'),
+                    ]
+                );
+            }
 
             // ==== STAFF ====
             $staffPayload = $request->input('staff', []);
@@ -351,10 +401,8 @@ class ContingentController extends Controller
                 $staffPayload = [];
             }
 
-            // Log buat debugging (lihat storage/logs/laravel.log)
             Log::info('STORE staff raw payload', ['staff' => $staffPayload]);
 
-            // Insert per baris (lebih mudah trace error)
             foreach ($staffPayload as $row) {
                 $roleId    = $row['staff_role_id'] ?? null;
                 $fullName  = $row['full_name']     ?? null;
@@ -391,11 +439,7 @@ class ContingentController extends Controller
         }
     }
 
-
-
-
-    // Update an existing contingent
-    
+    // ================== UPDATE ==================
 
     public function update(Request $request, $id)
     {
@@ -424,6 +468,11 @@ class ContingentController extends Controller
 
                 'status'         => 'sometimes|in:active,inactive,pending,disqualified',
 
+                // ✅ Optional tournament (kalau nanti mau dipakai juga di edit)
+                'tournament_id'   => 'sometimes|nullable|exists:tournaments,id',
+                'age_category_id' => 'sometimes|nullable|exists:age_categories,id|required_with:tournament_id',
+                'gender'          => ['sometimes','nullable', Rule::in(['male','female','mixed'])],
+
                 // jersey & warna
                 'jersey_home_hex'   => 'sometimes|nullable|regex:/^#[0-9A-Fa-f]{6}$/',
                 'jersey_away_hex'   => 'sometimes|nullable|regex:/^#[0-9A-Fa-f]{6}$/',
@@ -433,11 +482,11 @@ class ContingentController extends Controller
                 // logo
                 'logo'              => 'sometimes|nullable|image|mimes:jpg,jpeg,png,webp|max:20480',
 
-                // multi tournament
+                // multi tournament (lama, kalau masih dipakai UI lain)
                 'tournament_ids'    => 'sometimes|array',
                 'tournament_ids.*'  => 'exists:tournaments,id',
 
-                // staf (baris kosong/invalid akan difilter manual)
+                // staf
                 'staff'                         => 'sometimes|array',
                 'staff.*.id'                    => 'nullable|integer',
                 'staff.*.staff_role_id'         => 'nullable|exists:staff_roles,id',
@@ -461,7 +510,6 @@ class ContingentController extends Controller
             $slug = Str::slug($request->input('name', $contingent->name) ?: 'team');
 
             // === FILES ===
-            // Logo
             if ($request->hasFile('logo')) {
                 if ($contingent->logo && !Str::startsWith($contingent->logo, ['http://','https://','/storage/'])) {
                     Storage::disk('public')->delete($contingent->logo);
@@ -470,7 +518,6 @@ class ContingentController extends Controller
                 $updates['logo'] = $request->file('logo')->storeAs('uploads/contingent_logos', $filename, 'public');
             }
 
-            // Jersey home
             if ($request->hasFile('jersey_home_image')) {
                 if ($contingent->jersey_home_image && !Str::startsWith($contingent->jersey_home_image, ['http://','https://','/storage/'])) {
                     Storage::disk('public')->delete($contingent->jersey_home_image);
@@ -479,7 +526,6 @@ class ContingentController extends Controller
                 $updates['jersey_home_image'] = $request->file('jersey_home_image')->storeAs('uploads/contingent_jerseys', $filename, 'public');
             }
 
-            // Jersey away
             if ($request->hasFile('jersey_away_image')) {
                 if ($contingent->jersey_away_image && !Str::startsWith($contingent->jersey_away_image, ['http://','https://','/storage/'])) {
                     Storage::disk('public')->delete($contingent->jersey_away_image);
@@ -489,15 +535,35 @@ class ContingentController extends Controller
             }
 
             // Buang key non-kolom sebelum update
-            unset($updates['tournament_ids'], $updates['staff']);
+            unset(
+                $updates['tournament_ids'],
+                $updates['staff'],
+                $updates['tournament_id'],
+                $updates['age_category_id'],
+                $updates['gender'],
+            );
 
             // === UPDATE MASTER ===
             $contingent->fill($updates);
             $contingent->save();
 
-            // === SYNC TOURNAMENTS ===
+            // === SYNC TOURNAMENTS LAMA (kalau masih dipakai tempat lain) ===
             if ($request->filled('tournament_ids')) {
                 $contingent->tournaments()->sync($request->input('tournament_ids', []));
+            }
+
+            // ✅ UPDATE PIVOT PRIMARY TOURNAMENT (kalau dikirim)
+            if ($request->filled('tournament_id')) {
+                TournamentContingent::updateOrCreate(
+                    [
+                        'tournament_id' => (int) $request->input('tournament_id'),
+                        'contingent_id' => $contingent->id,
+                    ],
+                    [
+                        'age_category_id' => $request->input('age_category_id'),
+                        'gender'          => $request->input('gender'),
+                    ]
+                );
             }
 
             // === STAFF ===

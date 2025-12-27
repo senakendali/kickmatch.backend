@@ -47,18 +47,41 @@ class TournamentContingentController extends Controller
      */
     public function formData($contingentId)
     {
-        $contingent = Contingent::findOrFail($contingentId);
+        try {
+            // 🔹 Load contingent + relasi district
+            $contingent = Contingent::with('district')
+                ->findOrFail($contingentId);
 
-        // misal hanya tournament aktif yg bisa dipilih
-        $tournaments = Tournament::where('status', 'active')
-            ->orderBy('start_date')
-            ->get(['id', 'name', 'start_date']);
+            // 🔹 Tambahkan field city biar enak dipakai di frontend
+            $district = $contingent->district;
 
-        return response()->json([
-            'contingent' => $contingent,
-            'tournaments' => $tournaments,
-        ]);
+            $cityName = null;
+            if ($district) {
+                // Sesuaikan dengan kolom di tabel districts
+                $cityName = $district->name
+                    ?? $district->district_name
+                    ?? $district->city_name
+                    ?? null;
+            }
+
+            $contingent->setAttribute('city', $cityName);
+
+            // 🔹 Hanya tournament aktif yang bisa dipilih
+            $tournaments = Tournament::where('status', 'active')
+                ->orderBy('start_date')
+                ->get(['id', 'name', 'start_date']);
+
+            return response()->json([
+                'contingent'  => $contingent,
+                'tournaments' => $tournaments,
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Contingent not found',
+            ], 404);
+        }
     }
+
 
     /**
      * Ambil age categories untuk 1 tournament (kalau sudah punya tabel pivot tournament_age_categories)
